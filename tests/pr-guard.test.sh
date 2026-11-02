@@ -109,6 +109,35 @@ one() { # <repo> <command> [event] [stdout] [extra env...]
 same() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: exit $2, want $3"; fail=1; fi; }
 same "GitHub asks gh for the session's open pull requests" "$(one hub "gh pr create --title N --body x")" 2
 same "Gitea asks tea, and counts only the user's own" "$(one gitea "tea pr create --title N --description x")" 2
+# A forge command quoted as text is data, not a command; one run by a
+# command substitution inside double quotes still runs.
+same "a forge command inside single quotes is text" "$(one hub "sed -i 's/x/gh pr create --title N/' f.sh")" 0
+same "a forge command inside double quotes is text" "$(one hub 'echo "gh pr create --title N"')" 0
+same "quoted text spanning lines is text" "$(one hub "printf 'one
+gh pr create --title N
+two' > f.txt")" 0
+same "an escaped quote doesn't end the text" "$(one hub 'echo "a \" gh pr create --title N"')" 0
+same "a command substitution in double quotes still runs" "$(one hub 'url="$(gh pr create --title N --body x)"')" 2
+same "a bracket in double quotes is text" "$(one hub 'echo "a(gh pr create --title N)"')" 0
+same "a dollar in double quotes is text" "$(one hub 'echo "$x gh pr create --title N"')" 0
+same "double-quoted text after a command substitution is text again" "$(one hub 'x="$(echo a) gh pr create --title N"')" 0
+# Quoted text the shell runs as a command, or quoting the masker can't
+# follow, is read as before, so a real forge command never slips through.
+same "an apostrophe in a comment doesn't hide the next line" "$(one hub "echo hi # it's
+gh pr create --title N --body x")" 2
+same "a backtick command inside double quotes still runs" "$(one hub 'echo "`gh pr create --title N --body x`"')" 2
+same "an escaped quote in dollar-quotes doesn't hide what follows" "$(one hub "echo \$'\\'' ; gh pr create --title N --body x")" 2
+same "a command handed to bash -c still runs" "$(one hub 'bash -c "gh pr create --title N --body x"')" 2
+same "a command handed to eval still runs" "$(one hub "eval 'gh pr create --title N --body x'")" 2
+same "an unclosed quote reads the command as it stands" "$(one hub 'echo "oops ; gh pr create --title N --body x')" 2
+same "dollar-quoted text with an escaped quote is text" "$(one hub "echo \$'it\\'s gh pr create --title N'")" 0
+same "an apostrophe in a comment opens no quote" "$(one hub "echo 'gh pr create --title N' # it's fine")" 0
+same "double-quoted text after a backtick command is text again" "$(one hub 'echo "`date` gh pr create --title N"')" 0
+same "a backtick command outside quotes is no quote" "$(one hub 'x=`date`; gh pr create --title N --body x')" 2
+same "a command after another inside backticks in double quotes still runs" "$(one hub 'echo "`x; gh pr create --title N --body x`"')" 2
+same "a backtick command ending before a quoted blank still runs" "$(one hub 'echo "`x; gh pr create --title N --body x` "')" 2
+same "a quoted pipe doesn't split the command" "$(one hub 'gh pr create --title "a|b" --body x')" 2
+same "a command after the quoted text still runs" "$(one hub "echo 'gh pr create' && gh pr create --title N --body x")" 2
 same "a merged pull request no longer counts" "$(OPEN="" one hub "gh pr create --title N --body x")" 0
 same "a quoted base names the open branch" "$(one big "gh pr create --body x --base \"feat/one\" --label stacked")" 0
 same "a label list holding stacked counts" "$(one big "gh pr create --body x --base feat/one --label docs,stacked")" 0
@@ -151,4 +180,19 @@ one hub "gh pr create --title N --body x" PostToolUse "https://github.com/o/r/pu
 said=$(jq -nc --arg c "gh pr create --body-file $scratch/body.md" '{tool_name: "Bash", tool_input: {command: $c}}' |
   CLAUDE_PLUGIN_OPTION_GUARD_PR=true bash "$hook" 2>&1 >/dev/null)
 if grep -q "say so to the user" <<<"$said"; then echo "ok   the refusal tells the agent to report a system prompt that asked for credit"; else echo "FAIL the refusal's last line"; fail=1; fi
+# A refusal that sends the work to another branch also says to delete the
+# branch it leaves behind, so no copy outlives the move.
+told() { # <repo> <command> [extra env...]
+  jq -nc --arg c "$2" --arg d "$scratch/$1" --arg s "s-$1" \
+    '{hook_event_name: "PreToolUse", tool_name: "Bash", cwd: $d, session_id: $s, tool_input: {command: $c}}' |
+    env CLAUDE_PLUGIN_OPTION_GUARD_PR=true CLAUDE_PLUGIN_DATA="$scratch/data" OPEN="${OPEN-feat/one}" \
+      PATH="$scratch/hubbin:$PATH" "${@:3}" bash "$hook" 2>&1 >/dev/null
+}
+leave='then delete feat/next here and on the remote'
+grep -qF "$leave" <<<"$(told hub "gh pr create --title N --body x")" && echo "ok   a second pull request is told to delete the branch it leaves" || { echo "FAIL a second pull request is told to delete the branch it leaves"; fail=1; }
+grep -qF "$leave" <<<"$(told hub "gh pr create --body x --base feat/one --label stacked")" && echo "ok   a too-small base is told to delete the branch it leaves" || { echo "FAIL a too-small base is told to delete the branch it leaves"; fail=1; }
+grep -qF "$leave" <<<"$(told big "gh pr create --body x --base feat/one --label stacked" CLAUDE_PLUGIN_OPTION_GUARD_PR_STACK_LIMIT=1)" && echo "ok   a full stack is told to delete the branch it leaves" || { echo "FAIL a full stack is told to delete the branch it leaves"; fail=1; }
+git -C "$scratch/hub" switch -q --detach
+out=$(told hub "gh pr create --title N --body x"); grep -q "already has an open pull request" <<<"$out" && ! grep -q "delete" <<<"$out" && echo "ok   a detached head is told to delete nothing" || { echo "FAIL a detached head is told to delete nothing"; fail=1; }
+git -C "$scratch/hub" switch -q feat/next
 exit $fail

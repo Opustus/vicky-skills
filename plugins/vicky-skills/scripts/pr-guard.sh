@@ -35,6 +35,10 @@ session_id=$(jq -r '.session_id // ""' <<<"$payload" 2>/dev/null)
 # Only the forge CLIs and git-spice send text to the forge. The command
 # without heredoc bodies decides what runs; the credit check reads it all.
 code=$(awk -f "$(dirname "$0")/heredoc-strip.awk" <<<"$command")
+# Quoted text is masked, so a quoted forge command reads as text. When the
+# masker fails (an unclosed quote, or an awk without gawk) the command is read
+# as it stands.
+quoted=$(awk -f "$(dirname "$0")/quote-mask.awk" <<<"$code") && [ -n "$quoted" ] || quoted=$code
 grep -Eq '(^|[^[:alnum:]_-])(gh|tea|gs)([[:space:]]|$)' <<<"$code" || exit 0
 
 [ -z "$cwd" ] || cd "$cwd" 2>/dev/null || true
@@ -129,6 +133,12 @@ lines_of() {
   done
 }
 
+# The line that keeps a moved effort from leaving its old branch behind.
+left_behind() {
+  case "$current" in ''|HEAD) return 0 ;; esac
+  echo "If the work is already committed on $current, cherry-pick it onto $1. Once every commit is there and no pull request is open from $current, then delete $current here and on the remote (git push origin --delete $current), so no copy outlives the move."
+}
+
 # Checks one command that may open a pull request. <kind> is pr for a plain
 # create, gh-stack or gs for the stack tools.
 check() {
@@ -142,6 +152,7 @@ check() {
     if ! grep -qxF -- "$base" <<<"$heads"; then
       refuse "This session already has an open pull request here, on $top. One effort is one pull request, opened once, so CI runs once." \
         "Commit this work on $top and push it there." \
+        "$(left_behind "$top")" \
         "Only a follow-up that is big enough to review alone, or truly separate work, gets its own pull request: stacked on $top (base $top) and labelled stacked."
     fi
   else
@@ -156,12 +167,14 @@ check() {
   fi
   if ((count >= limit)); then
     refuse "This session's stack already holds $count open pull requests, the most it takes." \
-      "Commit this work on the top branch, $top, and push it there."
+      "Commit this work on the top branch, $top, and push it there." \
+      "$(left_behind "$top")"
   fi
   lines=$(lines_of "$base")
   if [ -n "$lines" ] && ((lines < min_lines)) && ! tr -d '\\' <<<"$forge_text" | grep -q 'Separate work:'; then
     refuse "$base changes $lines lines, and a follow-up stacks only on a pull request of $min_lines lines or more." \
       "Commit this work on $base and push it there." \
+      "$(left_behind "$base")" \
       "If it is truly separate work, say why in a body line that starts with Separate work:"
   fi
 }
@@ -176,21 +189,27 @@ remember() {
   printf '%s %s\n' "$repo" "$head" >>"$record"
 }
 
-while IFS= read -r segment; do
+while IFS= read -r masked; do
+  # Matched on the masked text, read for flags with the quoted text restored.
+  segment=$(tr '\001\002\003\004\005' ' ;&|\n' <<<"$masked")
+  # Quoted text handed to a shell, eval, ssh or xargs runs, so it is read whole.
+  if grep -Eq '(^|[[:space:]/(])(bash|sh|zsh|dash|eval|ssh|xargs|su|run0)([[:space:]]|$)' <<<"$masked"; then
+    masked=$segment
+  fi
   kind="" base="" labels="" head=$current
-  if grep -Eq '(^|[^[:alnum:]_-])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' <<<"$segment"; then
+  if grep -Eq '(^|[^[:alnum:]_-])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' <<<"$masked"; then
     kind=pr
     base=$(flag_value "$segment" --base -B)
     labels=$(flag_value "$segment" --label -l)
     head=$(flag_value "$segment" --head -H)
-  elif grep -Eq '(^|[^[:alnum:]_-])tea[[:space:]]+(pulls|pull|pr)[[:space:]]+(create|c)([[:space:]]|$)' <<<"$segment"; then
+  elif grep -Eq '(^|[^[:alnum:]_-])tea[[:space:]]+(pulls|pull|pr)[[:space:]]+(create|c)([[:space:]]|$)' <<<"$masked"; then
     kind=pr
     base=$(flag_value "$segment" --base -b)
     labels=$(flag_value "$segment" --labels -L)
     head=$(flag_value "$segment" --head)
-  elif grep -Eq '(^|[^[:alnum:]_-])gh[[:space:]]+stack[[:space:]]+submit([[:space:]]|$)' <<<"$segment"; then
+  elif grep -Eq '(^|[^[:alnum:]_-])gh[[:space:]]+stack[[:space:]]+submit([[:space:]]|$)' <<<"$masked"; then
     kind=gh-stack
-  elif grep -Eq '(^|[^[:alnum:]_-])gs[[:space:]]+((stack|s|upstack|us|branch|b)[[:space:]]+(submit|s)|ss|uss|bs)([[:space:]]|$)' <<<"$segment"; then
+  elif grep -Eq '(^|[^[:alnum:]_-])gs[[:space:]]+((stack|s|upstack|us|branch|b)[[:space:]]+(submit|s)|ss|uss|bs)([[:space:]]|$)' <<<"$masked"; then
     kind=gs
     labels=$(flag_value "$segment" --label -l)
   fi
@@ -200,6 +219,6 @@ while IFS= read -r segment; do
   else
     check "$segment" "$kind" "$base" "$labels"
   fi
-done < <(tr ';&|\n' '\n' <<<"$code")
+done < <(tr ';&|\n' '\n' <<<"$quoted")
 
 exit 0 # mutant-ok delete: the loop above leaves status 0
