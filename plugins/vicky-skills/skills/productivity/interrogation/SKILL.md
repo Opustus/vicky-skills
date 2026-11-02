@@ -1,6 +1,6 @@
 ---
 name: interrogation
-description: Question the user, round by round, with questions only, until a plan, decision or idea has no open branch left and its answers are written as examples. Use when the user says "grill me" or "interrogate me", wants to work out what they want in their own words, or an anomaly needs the human's answers. When the user wants ideas argued back at them, use `council-of-elrond` instead.
+description: Question the user, round by round, until a plan, decision or idea has no open branch left. Use when the user says "grill me" or "interrogate me", wants to work out what they want in their own words, or an anomaly needs the human's answers. When the user wants ideas argued back at them, use `council-of-elrond` instead.
 ---
 
 # Interrogation
@@ -25,5 +25,5 @@ Every answer comes from the user. You ask questions and give **leads**: facts yo
    A lead is optional. Done when every question on the frontier is asked or waits on an open one, and every lead names its source.
 2. **Look up facts yourself.** A question that needs a fact from the code, the docs or the tools gets a subagent, never the user. Only the questions that depend on that fact wait for it. A fact you can't read stays out of the round. Done when every lead is a fact you read.
 3. **When the user asks what you'd pick**, answer "This one is yours." Then give leads and threads: a **thread** is a narrower question that helps them decide. Done when the reply holds no option and no pick.
-4. **Wait for the answers**, then recompute the frontier and ask the next round. Done when every answer has its place on the tree, and every branch it opens is on the frontier.
+4. **Wait for the answers**, then recompute the frontier and ask the next round. An "I don't know" stays on the frontier, marked open, and the round moves on. Done when every answer has its place on the tree, and every branch it opens is on the frontier.
 5. **Release the user when the frontier is empty**: every branch visited, nothing assumed. Write the answers as Given / When / Then examples in the user's words, the form `examples` uses, and act only after the user confirms them. Then offer the stars [lay-course](../../engineering/lay-course/SKILL.md) places under "Start an effort", step 4. Done when the user has confirmed or edited every example and taken an ending.

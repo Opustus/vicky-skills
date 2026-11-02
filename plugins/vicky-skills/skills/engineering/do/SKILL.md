@@ -1,6 +1,6 @@
 ---
 name: do
-description: Build something behaviour-first, from a sentence in chat, a ticket or a whole star chart. The user approves Given / When / Then examples, each becomes a red test, the code turns them green, and mutation proves the tests catch bugs. Use when the user asks for a change, hands over a ticket, or hands over a star chart to build.
+description: Build something behaviour-first, from a sentence in chat, a ticket or a whole star chart. Use when the user asks for a change, hands over a ticket, or hands over a star chart to build.
 ---
 
 # Do
@@ -9,7 +9,7 @@ description: Build something behaviour-first, from a sentence in chat, a ticket 
 
 A **build** turns approved examples green. **The examples are the spec, and each one is a seam**: a Given / When / Then its test proves from the observer's side. Prose explains why and decides nothing. Mutation proves the tests can fail. The user brings a request typed in chat, a star, or a star chart whose stars are ready. A request too big for one session goes to `lay-course` instead, and a star with open blockers to `warp`. When a conversation has already settled what to build and it needs tickets, run `mission-brief`.
 
-Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults. With no such file, the defaults stand.
+Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults.
 
 A **trunk repo** takes every change straight on main: its `CLAUDE.md` or `AGENTS.md` says to commit to `main` and open no branch or pull request. Read the agent file of the repo you will change, even when the session started in another one. In a trunk repo, every step below commits on `main` after `git pull --rebase` and pushes there, with no branch, draft or pull request, and an integration branch is `main` itself.
 
@@ -32,7 +32,7 @@ The user may be away once the examples are approved, and a question or an open e
 
 `make-it-so`, run by `warp` or when the ask needs a finished pull request, hands the drafts and the list to the user before the pull request goes ready. Done when step 6 ends with no question asked since step 1.
 
-**State at every stop.** At every stop, write the pull request body's Status section, as `ship-it` says: a draft opened, a slice parked, a gate reached, the run ended. A ticket whose slice is parked: move its ticket back to the not-started state with a `Waits on:` line, as "Waiting work" in `docs/agents/issue-tracker.md` says.
+**State at every stop.** At every stop, write the pull request body's Status section, as `ship-it` says: a draft opened, a slice parked, a gate reached, the run ended. A ticket whose slice is parked: park its ticket with the tracker's "Park a ticket" action, with a `Waits on:` line, as "Waiting work" in `docs/agents/issue-tracker.md` says.
 
 ## Receipts
 
@@ -68,10 +68,4 @@ Validation at a trust boundary, error handling that prevents data loss, security
 
 ## Build a whole star chart
 
-The frontier is every open, unblocked star on the chart.
-
-1. Create one **integration branch** for the chart, from the default branch. It exists only for this whole-chart run with parallel implementers: their branches merge into it locally, and it reaches the default branch through one pull request. A single star built on its own never bases its pull request on an integration branch. Open its draft pull request after the first merge, closing every star. Done when the branch exists and its draft pull request is open.
-2. Give each frontier ticket to its own implementer subagent, in its own worktree, on a branch from the integration branch. Each one runs steps 1 to 5 above with no stops, reports its drafts and Check these lines, then brings the integration branch into its own before it reports. Done when each implementer has reported.
-3. Merge each finished branch into the integration branch. When that opens new frontier tickets, start their subagents. Done when no open unblocked star is left without a subagent or a merge.
-4. Once every ticket is done, run step 6 on the integration branch and fix its findings in one more subagent.
-5. Remove every worktree the build made, then finish with `make-it-so`. Done when `git worktree list` shows none of them and `make-it-so` reports green.
+Read [STAR-CHART-BUILD.md](STAR-CHART-BUILD.md) before the first step of a whole-chart build. A single star skips it.

@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Review the changes since a fixed point (commit, branch, tag or merge-base) on three axes: Standards (the repo's rules and the house principles), Spec (the approved examples and the decisions they rest on) and Simplicity (what to delete). Runs the three reviewer agents in parallel, or one quick inline pass for a small diff, and reports them side by side. Use when the user wants to review a branch, a PR or work in progress, or asks to \"review since X\"."
+description: "Review the changes since a fixed point (commit, branch, tag or merge-base) on three axes: Standards, Spec and Simplicity. Use when the user wants to review a branch, a PR or work in progress, or asks to \"review since X\"."
 ---
 
 # Review
@@ -15,7 +15,7 @@ Three-axis review of the diff between `HEAD` and a fixed point:
 
 The tracker is named in `docs/agents/issue-tracker.md`. If that file is missing, tell the user to run `/first-contact`.
 
-Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults. With no such file, the defaults stand.
+Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults.
 
 ## Steps
 

@@ -18,8 +18,6 @@ blocked_by: ["[[<blocker note title>]]"]
 | Comment | Append `- YYYY-MM-DD: <text>` under `## Comments`. |
 | Find | `grep -l '<text>' "<vault>/vicky-skills/"*.md` |
 | Close | Comment the reason, then set `status: done`. |
-| List items created or changed since <time> | `ls "<vault>/vicky-skills/" \| awk '$1 >= "<YYYYMMDDHHMMSS>"'`. The name's timestamp is the day it was filed, so every line is a new item. |
-| List items closed since <time> | `grep -l '^status: done' "<vault>/vicky-skills/"*.md`, then keep each note whose last `- YYYY-MM-DD:` comment is on or after <time>. |
 
 ## Star chart operations
 
@@ -41,7 +39,7 @@ A waiting ticket can't go on until the thing its `Waits on:` line names is done.
 - **List items created or changed since <time>**: `find "<vault>/vicky-skills/" -name '*.md' -newermt '<time>'`. A note whose name's timestamp is at or after `<time>` is new, any other is edited. Show at most five, then a count of the rest.
 - **List items closed since <time>**: `find "<vault>/vicky-skills/" -name '*.md' -newermt '<time>' -exec grep -l '^status: done' {} +`. Give the count.
 - **Park a ticket**: set `status: waiting` and add a `Waits on: <who or what>` line under the frontmatter.
-- **Claim a waiting ticket**: set `status: claimed`, before any other work.
+- **Claim a waiting ticket**: set `status: claimed` and delete its `Waits on:` line, before any other work.
 
 ## Ticket drift
 

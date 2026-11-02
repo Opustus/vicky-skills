@@ -1,19 +1,19 @@
 ---
 name: make-it-so
-description: Finish a draft pull request and see it through CI — make it current and true, hold it to a measured QA checklist, mark it ready, then babysit CI until every required check is green. Use when the user says "make it so", "finish the PR", "mark it ready", "ship it", "babysit CI" or "make sure CI passes", when `warp` ends, and when an effort's ask needs a finished pull request ("one PR", "ship it", "done").
+description: Finish a draft pull request and see it through CI. Use when the user says "make it so", "finish the PR", "mark it ready", "ship it", "babysit CI" or "make sure CI passes", when `warp` ends, and when an effort's ask needs a finished pull request ("one PR", "ship it", "done").
 ---
 
 # Make it so
 
-> _Make it so: current, true, ready, green._
+> _Make it so: current, checked, true, ready, green._
 
 A pull request opens early as a **draft**: a pull request that asks no one to review it yet (GitHub's Draft state, or a `WIP:` title prefix on Gitea, unless the repo's guide names another way). The draft collects the work. **Make it so** is the order that finishes it: current, checked by the user, true, ready, green. Merging stays with the user or the repo's own automation.
 
-Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults. With no such file, the defaults stand.
+Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults.
 
 ## Steps
 
-1. **Finish the branch.** Commit everything. Run `git fetch origin`. When the branch is behind `main`, rebase it, with `history-monks` when what landed changes the form of what the branch touches. Run the checks the change reaches. Done when the tree is clean, the branch is current, and the checks pass.
+1. **Finish the branch.** Commit everything. Run `git fetch origin`. When the branch is behind its base branch, rebase it, with `history-monks` when what landed changes the form of what the branch touches. Run the checks the change reaches. Done when the tree is clean, the branch is current, and the checks pass.
 2. **Run the QA checklist**, Q0 to Q6, below. Q0 comes first: when no fresh review of the branch is on record, run `review` now, with the merge-base as its fixed point, fix each finding, and record it as Q0 says. Fix each other failure in place and run the item again. A finding on an approved-spec test goes to the user as a question, through `examples`' "Changing an approved example". Q1 to Q6 are not a review: once Q0 passes, a new design concern goes to the user as a question. Done when Q0 to Q6 each pass, or Q5 has its reason in the body.
 3. **Hand over what the build held.** When the effort has a draft file, open it with `red-pen` and commit what the user leaves. Then take the pull request's Check these list to the user, one line at a time. Fix each answer that differs from the guess, build each parked slice they unblock, and delete the list. Done when the draft file is gone and Check these is empty or holds only what waits on someone else.
 4. **Make it true.** Run `ship-it` for the body and `loose-ends` for the tickets, then Q7 to Q10. Fix each failure in place and run the item again. Done when Q7 to Q10 each pass.

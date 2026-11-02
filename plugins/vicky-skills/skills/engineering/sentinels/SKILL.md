@@ -20,17 +20,11 @@ A pass always ends in counts or in "unrun, because <the log line>". It never end
 - Skip code no test can see: log calls and messages to a person.
 - Time each mutant out at its tests' baseline time x 1.5 plus a few seconds. A higher timeout hides an endless loop as slowness.
 
-Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults. With no such file, the defaults stand.
+Read the repo's `TESTING_STANDARDS.md` first: it wins over this skill's defaults.
 
 ## Tests that make a pass fast
 
-Each mutant runs the tests that reach it, so a test's time is paid once per mutant. Hold every test a pass runs to these:
-
-- **It finishes in about a second.** Share a fixture across the suite: one container, one server, one clone. Fake the network and the clock. A test never sleeps to wait: it polls with a cap, or waits on the process it started.
-- **A stand-in exits when it's told to.** A stub editor or server `exec`s its command, so the process id the test saves is the one it kills. A child left behind holds the test's output open, and the runner waits for it on every mutant.
-- **A fast check runs first.** A small test of exit codes and quiet paths across the code kills most mutants in a fraction of a second. The slow, thorough tests then run only against the mutants that survive it.
-- **The runner pays its setup once.** Copy the repo, build, or start a runner once per worker, and put the original back after each mutant, never a fresh copy per mutant.
-- **The first red test ends the mutant.** Keep the tool's bail on.
+Before you write a test a pass will run, and whenever a pass runs slow or hangs, hold its tests to "Tests that make a pass fast" in [SPEED.md](SPEED.md).
 
 ## Steps
 
@@ -74,4 +68,4 @@ Use it when no tool fits the language, or a tool can't finish one file.
 1. Start from a clean tree. Done when `git status --short` lists nothing in the file; otherwise stop and ask the user.
 2. List the decision points in the changed lines: comparisons and their boundaries, boolean operators, arithmetic operators, returned constants, calls whose effect matters, early returns. Done when each one is on the list, up to the ten a bug is most likely to hide in.
 3. For each point: make one mutation, run the tests that reach the file, write down red or green, and put the line back. Done when `git diff <file>` is empty and every point has a result.
-4. A green result is a survivor: answer it as step 5 says. Done when every survivor has its answer.
+4. A green result is a survivor: answer it as step 6 says. Done when every survivor has its answer.

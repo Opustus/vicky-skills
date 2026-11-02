@@ -1,6 +1,6 @@
 ---
 name: interactive-page
-description: Open what the user must read, approve, tick or choose (a red-pen draft file, an over-to-you checklist, a question with options) as a page in their browser, and write their answers back into the file. Use whenever a skill hands the user a file to edit or tick, and whenever you would ask the user a question with options.
+description: Open what the user must read, approve, tick or choose (a red-pen draft file, an over-to-you checklist, a question with options) as a page in their browser, and write their answers back into the file. Use whenever a skill hands the user a file to edit or tick, and whenever a question's options need room to read.
 ---
 
 # Interactive page
@@ -31,7 +31,7 @@ Every other line shows as text. A Done that changes nothing leaves the file byte
 
 ## A question with options
 
-A question you would ask in chat with two or more options goes on a page instead. During a `council-of-elrond`, before Frodo chooses the road, the question stays in the round. Write it as one section per question, your pick marked `(x)`:
+A quick pick between short options goes through `AskUserQuestion` in the terminal. A question whose options need room to read goes on a page instead. During a `council-of-elrond`, before Frodo chooses the road, the question stays in the round. Write it as one section per question, your pick marked `(x)`:
 
 ```markdown
 # A question for you
@@ -48,5 +48,5 @@ For a planning page, such as a warp's pre-flight or a council's next moves after
 ## Steps
 
 1. **Write the file** in the form the calling skill gives: `red-pen`'s draft file, `over-to-you`'s checklist, or a question as above, in the system temp folder for a question. Done when the file exists.
-2. **Open it** with `bash <this skill's folder>/scripts/open-page.sh <file>`, run from the repo as a background command. It prints `page: open <url>` first: read that line from the command's output and give the user the link in the same message, every time, since a desktop opener can fail without a word, and say that Done sends it back. It runs `open-draft.sh`, beside it, with the page in the editor's place: the `draft-lock` hook holds the repo's code while the page is open, and a section the user changed or ticked grants its location to the approved-spec guard. With no display on the machine, the file opens in the user's editor instead, the way `red-pen` step 2 says. When the command exits with status 2 and says `no answer within`, nobody answered: the file is as it was, so ask the same questions in chat instead of taking your picks. Done when the background command has exited, or the user said done in chat.
+2. **Open it** with `bash <this skill's folder>/scripts/open-page.sh <file>`, run from the repo as a background command. It prints `page: open <url>` first: read that line from the command's output and give the user the link in the same message, every time, since a desktop opener can fail without a word, and say that Done sends it back. It runs `open-draft.sh`, beside it, with the page in the editor's place: the `draft-lock` hook holds the repo's code while the page is open, and a section the user changed or ticked grants its location to the approved-spec guard. With no display on the machine, the file opens in the user's editor instead, the way `red-pen` step 2 says. When the command exits with status 2 and says `no answer within`, nobody answered: the file is as it was. Take your picks and record each in the pull request's Check these. Ask in chat only for a pick that is costly to undo. Done when the background command has exited, or the user said done in chat.
 3. **Read it back.** Read the file again and hand it to the calling skill's read-back step; for a question, the `(x)` option is the answer. A `Comment:` line is the user's note on the block above it, and one under `## Anything else` is a note on the whole page: act on each as the calling skill says for a note, before anything else. Done when every answer is acted on.
