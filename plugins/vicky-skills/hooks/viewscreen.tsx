@@ -75,7 +75,7 @@ const team = atom(
 // The summit line summit.sh last printed this session, or '' before any count.
 const summit = atom({ plugin: 'vicky-skills', key: 'summit' } as const, '')
 
-// Where the agent works: a linked worktree's branch, "main checkout" in the
+// Where the agent works: a linked worktree's branch, or the branch and "main checkout" in the
 // main one, or '' outside a git repo.
 const place = atom({ plugin: 'vicky-skills', key: 'place' } as const, '')
 
@@ -141,6 +141,8 @@ type Agent = {
  * started over on a reload, while the headline and history in `$.state` stay.
  */
 type Live = {
+  // The session's folder as last read, read again for its branch after each call.
+  cwd?: string
   calls: Map<string, Call>
   agents: Map<string, Agent>
   agentNames: Map<string, string>
@@ -205,7 +207,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
 
-    await locate($, e.cwd)
+    live.cwd = e.cwd
+    await locate($, live.cwd)
     await publish($, live)
 
     return result
@@ -290,6 +293,14 @@ export const register: Register = on => {
       const result = await next(e)
       const told = summitOf(result)
       if (told !== null) await update($, summit, () => told)
+      // A command can switch the branch, and a call can move the session
+      // into a worktree: then the checkout line is read again. Any other
+      // call skips git, so it never waits on it.
+      const folder = await currentFolder($, live.cwd)
+      if (folder !== live.cwd || e.tool === 'Bash') {
+        live.cwd = folder
+        await locate($, live.cwd)
+      }
 
       outcome = result.deny !== undefined ? 'denied' : result.isError ? 'error' : 'ok'
 
@@ -546,6 +557,9 @@ export const register: Register = on => {
           paddingX={1}
           width={columns}
         >
+          {/* The summit, then the checkout, sit above the Claude line. */}
+          {summitLine === '' ? [] : [<Box key="summit"><Text dimColor wrap="truncate-end">{printable(summitLine, MAX_LABEL_CHARS)}</Text></Box>]}
+          {placeLine === '' ? [] : [<Box key="place"><Text dimColor wrap="truncate-end">{`⎇ ${printable(placeLine, MAX_LABEL_CHARS)}`}</Text></Box>]}
           <Box key="activity" flexDirection="row">
             <Button
               key="toggle"
@@ -563,8 +577,6 @@ export const register: Register = on => {
               <Text dimColor>{elapsed}</Text>
             </Box>
           </Box>
-          {placeLine === '' ? [] : [<Box key="place"><Text dimColor wrap="truncate-end">{printable(placeLine, MAX_LABEL_CHARS)}</Text></Box>]}
-          {summitLine === '' ? [] : [<Box key="summit"><Text dimColor wrap="truncate-end">{printable(summitLine, MAX_LABEL_CHARS)}</Text></Box>]}
           {teamBox}
           {body}
         </Box>
@@ -574,9 +586,19 @@ export const register: Register = on => {
   })
 }
 
+/** The session's folder now, or the one last known when it cannot be read. */
+async function currentFolder($: EngineInterface, known: string | undefined): Promise<string | undefined> {
+  try {
+    const cwd: unknown = await $.session.cwd()
+    return typeof cwd === 'string' && cwd !== '' ? cwd : known
+  } catch {
+    return known
+  }
+}
+
 /**
  * Reads where the agent works and publishes it: the branch of a linked
- * worktree, "main checkout" in the main one, nothing outside a git repo.
+ * worktree, the branch and "main checkout" in the main one, nothing outside a git repo.
  */
 async function locate($: EngineInterface, cwd: string | undefined): Promise<void> {
   const where = await placeOf($, cwd)
@@ -601,23 +623,24 @@ async function placeOf($: EngineInterface, cwd: string | undefined): Promise<str
       return ''
     }
 
-    if (gitDir === commonDir) {
-      return 'main checkout'
-    }
-
     const branch = await $.process.run(['git', '-C', cwd, 'branch', '--show-current'], { timeoutMs: 3000 })
     const name = branch.exitCode === 0 ? branch.stdout.trim() : ''
+    const shown = name === '' ? 'detached HEAD' : name
 
-    return `worktree: ${name === '' ? 'detached HEAD' : name}`
+    return gitDir === commonDir ? `${shown} · main checkout` : `worktree: ${shown}`
   } catch {
     return ''
   }
 }
 
-/** The text after the last `summit: ` line in a tool's output, or null when it has none. */
+/**
+ * The text of the last line in a tool's output that starts with `summit: `,
+ * or null when it has none. Only a line start counts, so a search that prints
+ * this source or summit.sh never sets the band.
+ */
 function summitOf(result: unknown): string | null {
   const text = JSON.stringify(result ?? null)
-  const found = [...text.matchAll(/summit: ((?:[^"\\]|\\[^n])*)/g)].at(-1)
+  const found = [...text.matchAll(/(?:(?<!\\)"|\\n)summit: ((?:[^"\\]|\\[^n])*)/g)].at(-1)
   return found === undefined ? null : (JSON.parse(`"${found[1]}"`) as string)
 }
 
