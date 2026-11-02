@@ -29,6 +29,11 @@ as "survivor <script>:<line>: <mutated line>", then "survivors: <n>". Exits 1
 when any mutant survives. A line ending in "# mutant-ok: <reason>" makes no
 mutant, and one ending in "# mutant-ok delete: <reason>" makes no deletion,
 for code no test can tell apart from its mutant.
+
+Every test runs under `ulimit -d`, MUTANT_MEMORY of allocated memory per
+process, on the real script too, so a test that needs more fails before the
+pass starts rather than counting as a kill. The data limit leaves alone the
+address space a runtime such as Bun reserves and never uses.
 """
 import concurrent.futures
 import hashlib
@@ -46,6 +51,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(ROOT, "plugins", "vicky-skills", "scripts")
 PROOF = os.path.join(ROOT, "tests", "mutation-proof.tsv")
 SURVIVORS = os.path.join(ROOT, "tests", ".mutation-survivors")
+# Each process a mutant's test starts may allocate this much memory. A mutant that
+# loops while it grows a string dies here, not at its timeout with the
+# machine's memory full.
+MUTANT_MEMORY = 2**30
 GIT_GUARDS = ["push-behind-guard", "merged-branch-guard", "local-path-guard", "checkout_guard_approved_examples", "red_first_approved_examples"]
 TESTS = {
     "after-push.sh": ["after-push"],
@@ -58,7 +67,7 @@ TESTS = {
     "gamma-shift.sh": ["gamma-shift"],
     "gate-notify.sh": ["gate-notify"],
     "git-hook-lib.sh": GIT_GUARDS,
-    "heredoc-strip.awk": GIT_GUARDS + ["pr-guard", "issue-guard", "poll-pace", "poll_pace_heredoc_approved_examples"],
+    "heredoc-strip.awk": GIT_GUARDS + ["pr-guard", "issue-guard", "poll-pace", "poll_pace_heredoc_approved_examples", "heavy-run-guard"],
     "issue-guard.sh": ["issue-guard"],
     "local-path-guard.sh": ["local-path-guard"],
     "pr-guard.sh": ["pr-guard", "pr_guard_ai_credit_approved_examples", "pr_guard_one_pr_approved_examples"],
@@ -69,6 +78,8 @@ TESTS = {
     "spark-joy.sh": ["spark-joy", "no-remote-quiet"],
     "tea-stdin.awk": ["tea-stdin"],
     "tea-stdin.sh": ["tea-stdin"],
+    "heavy-run.awk": ["heavy-run-guard"],
+    "heavy-run-guard.sh": ["heavy-run-guard"],
     "ticket-drift.sh": ["ticket_drift_approved_examples", "no-remote-quiet"],
     "mutation-proof-guard.sh": ["mutation-proof-guard", "goal_driven_approved_examples"],
     "plane-block-guard.sh": ["plane_block_approved_examples"],
@@ -186,6 +197,11 @@ def replace(path, text):
     os.replace(handle.name, path)
 
 
+def capped(test):
+    """The command that runs a test with each of its processes held to MUTANT_MEMORY."""
+    return ["bash", "-c", f'ulimit -d {MUTANT_MEMORY // 1024} && exec bash "$0"', test]
+
+
 class Worker:
     """A copy of the repo's plugins and tests, made once and reused by every mutant it runs."""
 
@@ -201,7 +217,7 @@ class Worker:
         try:
             for test, limit in timeouts:
                 # Its own process group, so a timeout stops every child the test started.
-                proc = subprocess.Popen(["bash", os.path.join(self.root, "tests", test + ".test.sh")],
+                proc = subprocess.Popen(capped(os.path.join(self.root, "tests", test + ".test.sh")),
                                         env=dict(os.environ, MUTATE_HOOKS_INNER="1"), stdin=subprocess.DEVNULL,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                 try:
@@ -223,7 +239,7 @@ def baseline(script):
     times = []
     for test in TESTS[script]:
         start = time.monotonic()
-        done = subprocess.run(["bash", os.path.join(ROOT, "tests", test + ".test.sh")], stdin=subprocess.DEVNULL,
+        done = subprocess.run(capped(os.path.join(ROOT, "tests", test + ".test.sh")), stdin=subprocess.DEVNULL,
                               env=dict(os.environ, MUTATE_HOOKS_INNER="1"), capture_output=True)
         took = time.monotonic() - start
         if done.returncode:
