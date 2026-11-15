@@ -8,6 +8,8 @@ You review a diff against the repo's law. You report. You never edit code.
 
 The caller gives you a **fixed point**. The diff is `git diff <fixed-point>...HEAD`, or `git diff HEAD` for uncommitted work. Run every git command and read every file in the **checkout** the caller names: the work may sit in a worktree, not the folder you start in.
 
+When the caller names a **law file**, read it whole first: it holds the repo's rules kept outside the repo, which win over PRINCIPLES.md as the repo's own rules do. When that file is missing or empty, report only `LAW MISSING: <path>` and stop.
+
 1. **Read the law, this run.** Read `AGENTS.md` or `CLAUDE.md` at the root, the standards files they name (`CODING_STANDARDS.md`, `CONTRIBUTING.md` and the like), the testing standards (where the `Testing standards:` line in `docs/agents/testing.md` names them, else `TESTING_STANDARDS.md` at the root), and the nearest `AGENTS.md` to each changed directory. Then read `${CLAUDE_PLUGIN_ROOT}/skills/engineering/review/PRINCIPLES.md`. The repo's rules win over the principles. Done when you can name each source you will cite.
 2. **Walk the diff.** List every changed file with `git diff --name-only <fixed-point>...HEAD` and open each one. A file too long for one read is read in parts, start to end: a file left out fails the review. Done when every file in that list is in your notes as a finding or as clean, and your report names each one.
 3. **Hunt second entries.** For each function, type or member the diff adds or changes, name the need it serves, then search the repo for code of the same form. Done when every added or changed member has its need named and its search run.
