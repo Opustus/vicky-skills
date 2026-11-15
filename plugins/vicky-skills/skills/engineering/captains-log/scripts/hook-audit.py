@@ -7,7 +7,9 @@ error. The agent's next tool call before the user speaks is sorted into:
 retry-passed (a call like the refused one that went through), retry-refused
 (one refused again), other-call, other-refused, skill (it started a skill) or
 stopped (no call before the user spoke). Prints one line per hook, most
-refusals first.
+refusals first. A hook whose script is in neither the plugin's scripts
+folder nor the current folder's .claude/hooks ends its line with "gone": it
+was deleted, and its counts are history.
 """
 import collections
 import difflib
@@ -64,6 +66,10 @@ def outcome(refused, seq, k):
     return "skill" if nxt and nxt["name"] == "Skill" else "stopped"
 
 
+def present(hook, places):
+    return any(os.path.exists(os.path.join(d, hook + x)) for d in places for x in (".sh", ".py"))
+
+
 def main():
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 30
     root = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/.claude/projects")
@@ -82,10 +88,12 @@ def main():
             counts[m.group(1)]["refusals"] += 1
             if e[1] in calls:
                 counts[m.group(1)][outcome(calls[e[1]], seq, k)] += 1
+    places = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "scripts"),
+              os.path.join(os.getcwd(), ".claude", "hooks")]
     if not counts:
         print(f"no hook refusals in {days} days")
     for hook, c in sorted(counts.items(), key=lambda x: -x[1]["refusals"]):
-        print(hook, " ".join(f"{k}={v}" for k, v in c.most_common()))
+        print(hook, " ".join(f"{k}={v}" for k, v in c.most_common()) + ("" if present(hook, places) else " gone"))
 
 
 if __name__ == "__main__":
