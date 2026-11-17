@@ -109,12 +109,40 @@ git -C "$tea_repo" switch -q --detach
 check "a detached HEAD names the pull request as not read" "not read: pull request, HEAD is detached" "$(run "$tea_repo")"
 check "an extra argument is read as a ticket key" "ticket QQ-1" "$(run "$tea_repo" QQ-1)"
 
+# .todo is read only when the branch gave no pull request and no key.
+todo_repo=$(repo todo git@forge.example:o/t.git)
+echo '- 2026-01-01: **Handoff** from the todo' > "$dir/ticket-TODO-1"
+printf -- '- Finish it (TODO-1)\n' > "$todo_repo/.todo"
+echo '[]' > "$dir/tea-prs"
+lacks "a key in the branch name keeps .todo unread" "found: ticket TODO-1" "$(run "$todo_repo")"
+echo '[{"index":"8","head":"plain","url":"https://forge.example/o/t/pulls/8","title":"t","body":"no key here"}]' > "$dir/tea-prs"; echo '[]' > "$dir/tea-comments"
+lacks "an open pull request keeps .todo unread" "found: ticket TODO-1" "$(FIND_HANDOFF_BRANCH=plain run "$todo_repo")"
+echo '[]' > "$dir/tea-prs"
+out=$(FIND_HANDOFF_BRANCH=main run "$todo_repo")
+check "on main with nothing else, .todo is named as searched" "searched: .todo" "$out"
+printf -- '- Finish it (TODO-1)\n- Then ship it (TODO-1)\n' > "$todo_repo/.todo"
+printf -- '- Finish it (TODO-1)\n- Handoff: TODO-2 (2026-11-17)\n' > "$todo_repo/.todo"
+echo '- 2026-01-01: **Handoff** the newest' > "$dir/ticket-TODO-2"
+out=$(FIND_HANDOFF_BRANCH=main run "$todo_repo")
+check "a Handoff line's key is read" "found: ticket TODO-2" "$out"
+lacks "with a Handoff line, the other tickets .todo names are not read" "ticket TODO-1" "$out"
+printf -- '- Finish it (TODO-1)\n- Handoff: https://forge.example/o/t/pulls/8#c1 (2026-11-17)\n' > "$todo_repo/.todo"
+lacks "with a Handoff link, no ticket is read" "ticket TODO-1" "$(FIND_HANDOFF_BRANCH=main run "$todo_repo")"
+rm "$dir/ticket-TODO-2"
+printf -- '- Finish it (TODO-1)\n- Then ship it (TODO-1)\n' > "$todo_repo/.todo"
+check "a key .todo names twice is listed once" 1 "$(FIND_HANDOFF_BRANCH=main run "$todo_repo" | head -1 | grep -o 'ticket TODO-1' | wc -l)"
+rm "$dir/ticket-TODO-1"
+
 bare=$(repo bare git@forge.example:o/s.git)
 mkdir -p "$dir/nobin"; for t in bash git jq sed grep awk sort dirname basename timeout ls cat; do ln -s "$(command -v "$t")" "$dir/nobin/$t"; done
 out=$(cd "$bare" && PATH="$dir/nobin" FIND_HANDOFF_PROJECTS_DIR="$dir/projects" bash "$finder" 2>&1)
 check "with neither gh nor tea it names the pull request as not read" "not read: pull request, neither gh nor tea is installed" "$out"
 skill=$(cat "$root/plugins/vicky-skills/skills/productivity/sup/SKILL.md")
 check "sup step 1 runs the finder" "scripts/find-handoff.sh" "$skill"
+check "sup step 1 names the .todo pointer among the places" "the \`.todo\` Handoff line and the tickets \`.todo\` names when the branch names neither" "$skill"
 check "sup quotes where it looked when no handoff is found" "quotes the script's \`none found in:\` and \`not read:\` lines" "$skill"
+conn=$(cat "$root/plugins/vicky-skills/skills/productivity/conn/SKILL.md")
+check "conn points from .todo only after a post to a ticket or pull request" "After a post to a ticket or pull request, point at it from \`.todo\`" "$conn"
+check "conn leaves no pointer when standing orders are off" "Skip this when standing orders are off." "$conn"
 check "conn names /sup as the one resume command" "Name \`/sup\` as the only command that resumes the work" "$(cat "$root/plugins/vicky-skills/skills/productivity/conn/SKILL.md")"
 exit $fail

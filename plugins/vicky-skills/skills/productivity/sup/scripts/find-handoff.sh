@@ -7,6 +7,7 @@ plugin=${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/../../../.." && pwd)}
 projects=${FIND_HANDOFF_PROJECTS_DIR:-$HOME/.claude/projects}
 searched=() unread=() found=0
 hit() { printf 'found: %s: %s\n' "$1" "$2"; found=1; }
+keys_in() { grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+\b' | awk '!seen[$0]++'; } # ticket keys look like ABC-123
 branch=${FIND_HANDOFF_BRANCH:-$(git branch --show-current 2>/dev/null)}
 [ -n "$branch" ] || unread+=("pull request, HEAD is detached")
 pr_text="" # mutant-ok delete: every later read is "${pr_text}" in a quoted printf or jq, and an unset name prints the same empty text
@@ -34,8 +35,17 @@ if [ -n "$branch" ]; then
     else unread+=("pull request, no open one for $branch"); fi
   else unread+=("pull request, neither gh nor tea is installed"); fi
 fi
-# Ticket keys look like ABC-123.
-mapfile -t keys < <({ printf '%s\n' "$@"; printf '%s\n%s\n' "$branch" "$pr_text" | grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+\b'; } | awk 'NF && !seen[$0]++')
+mapfile -t keys < <({ printf '%s\n' "$@"; printf '%s\n%s\n' "$branch" "$pr_text" | keys_in; } | awk 'NF && !seen[$0]++')
+# .todo is the fallback pointer: its Handoff line first, else every ticket it names.
+top=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$pr_text" ] && [ "${#keys[@]}" = 0 ] && [ -f "$top/.todo" ]; then
+  searched+=(".todo")
+  pointer=$(grep -E '^- Handoff:' "$top/.todo" | tail -n 1)
+  url=$(grep -oE 'https?://[^ )]*' <<<"$pointer")
+  if [ -n "$url" ]; then hit ".todo Handoff line" "$url"
+  elif [ -n "$pointer" ]; then mapfile -t keys < <(keys_in <<<"$pointer")
+  else mapfile -t keys < <(keys_in < "$top/.todo"); fi
+fi
 for k in "${keys[@]}"; do
   out=$(timeout 15 bash "$plugin/scripts/read-item.sh" "$k" </dev/null 2>/dev/null)
   if [ -z "$out" ] || grep -q "^Read $k whole: " <<<"$out"; then unread+=("ticket $k, read it by hand: read-item.sh printed no comments"); continue; fi
