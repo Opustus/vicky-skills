@@ -15,6 +15,10 @@ Chart cap: 8
 
 Found work check: on
 
+Patch-tell hint: on
+
+Write `Patch-tell hint: off` to stop the reminder when an edit to a CI workflow adds a patch tell: a retry, a sleep, `continue-on-error`, a switched-off step, a skipped test or a raised timeout.
+
 Checklist lint: full
 
 Write `Checklist lint: basic` to keep only the person, kit and proof checks on over-to-you pages.
