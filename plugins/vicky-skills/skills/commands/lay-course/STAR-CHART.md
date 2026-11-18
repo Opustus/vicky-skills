@@ -1,0 +1,205 @@
+# Star charts
+
+The reference `lay-course` and `warp` both read: the words, the chart body, the ticket forms and the drawing. The tracker's commands are in `docs/agents/issue-tracker.md`, section "Star chart operations".
+
+## Words
+
+| Word | What it is |
+| --- | --- |
+| **star chart** | One tracker issue for an effort too big for one session. Every ticket the effort needs is a direct child of it. It closes when the effort ships. |
+| **mission** | What exists when the chart closes, in three sentences at most. |
+| **prime directive** | The rules that bind every ticket on the chart. |
+| **sensor log** | The facts the work rests on, each with its source: what the code, the engine or the spec does today. |
+| **star** | A ticket that delivers behaviour, specified by its approved examples. |
+| **anomaly** | A ticket that asks one question before the stars behind it can go on. A council or an interrogation answers it, picked when the user sits down to it. |
+| **away team** | A fact a decision waits on, found by the `away-team` skill. |
+| **probe** | A cheap, rough artifact (an outline, a stub, a sketch) for the human to react to. |
+| **task** | Work that has to happen before a decision can, such as getting access to a service. |
+| **nebula** | A question too loose to ticket yet. It may hold several tickets or none. |
+| **black hole** | A part of the work that eats effort without end, which the course steers around. Unlike a nebula, it is plain to see. It is never a ticket: the chart names it under Black holes, with its way around, such as a timebox or a path that skips it. |
+| **asteroid belt** | A question found during a build that the target can't ship without. `warp` builds around it, asks once at the end of the course, and builds the answers in the same pull request. |
+| **neutral zone** | Tickets closed because they're past the mission. |
+| **frontier** | The chart's open, unblocked, unassigned children, less any star an open line under Knowns sits in front of: a known unknown whose ticket is open, or a `Confirm:` line the user hasn't answered. |
+| **course** | The open blockers from the frontier to each target star, and the targets, in the order they must close. A target on the frontier is its own whole course. |
+| **orbit** | The tickets loosely linked to a chart or a ticket, which it touches but doesn't own and doesn't wait on: "in its orbit". The tracker holds them as related links. |
+
+## Write for a tired reader
+
+A person reads every chart and ticket before an agent does. Write them with the `human-voice` skill, in the plain register:
+
+- A body states the present. History goes in comments. A lasting broad rule goes in a decision record (written with `decision-record`), and the chart keeps one line pointing at it.
+- Refer to a ticket by its title, with the key inside the link.
+- One line per item in every list. Rewrite a line in place when it changes, and delete it when it stops being true.
+
+## The chart
+
+Title: `Star Chart: <the effort>`. Label: `starchart:chart`.
+
+```markdown
+## Mission
+
+<at most three sentences: what exists when this chart closes>
+
+## Chart
+
+<the drawing: see "Drawing the chart">
+
+## Prime directive
+
+- <what binds every ticket> (<pointer to its source>)
+
+## Sensor log
+
+- <a fact the work rests on>, behind <star links, or "every star">: "<the quoted line>" (<file, spec line or ticket it comes from, and its version>)
+
+## Knowns
+
+### Known knowns
+
+The Sensor log above.
+
+### Known unknowns
+
+- <an open question>, behind <star links>: [<anomaly or away team title>](<link>), blocking those stars
+
+### Unknown knowns
+
+- <a fact likely on record, or held by the user, that nobody wrote down>, behind <star links>: [<away team title>](<link>), or "Confirm: <one line for the user>"
+
+### Unknown unknowns
+
+- Riskiest star: [<star title>](<link>), covered by <a timebox or a probe>
+- Seen before: fallout on content no star names, checked by `warp`'s fallout sweep
+- Seen before: an approved example whose test can't fail, checked by `warp`'s pre-flight review of the tests
+- Seen before: <a kind of surprise an earlier chart logged>, checked by <how>
+- Surfaced: <the surprise>, while building [<star title>](<link>), cost <what it cost>
+
+## Decisions
+
+- [<ticket title>](<link>): <the answer in one line>, by <council or interrogation> (<decision record>)
+
+## Black holes
+
+- <the black hole>, threatening <links to the tickets it threatens>, and its way around: <a timebox, or a path that skips it>
+
+## Nebulae
+
+- <a question you can't phrase sharply yet>
+
+## Neutral zone
+
+- [<closed ticket title>](<link>): <why it is past the mission>
+```
+
+A chart with no black hole seen yet keeps the section, with the one line "None seen yet."
+
+A ticket in the chart's orbit is a related link on the tracker, never a section.
+
+## Ready to warp
+
+A chart is ready to warp when a warp can clear it with the user away. The label `starchart:afk` marks it, so the tracker's "List charts ready to warp" sorts AFK work from work that needs the user.
+
+- **Add** `starchart:afk` to an open chart when every one of these holds: no open anomaly or probe, no `Confirm:` line under Knowns, every open star's examples approved, and no open task that needs the user's account or a deploy.
+- **Remove** it the moment one stops holding: an anomaly, probe, `Confirm:` line or star without approved examples is filed on the chart, or a task that needs the user is added. Remove it too when the chart closes.
+- Check after every write that answers, files or closes a ticket on the chart.
+
+## Sorting the knowns
+
+Every chart sorts what its stars rest on into the four boxes of the Rumsfeld matrix, and each box routes its items to an action. A line in a box names the stars it sits behind.
+
+- **Known knowns**: facts with a source. Each goes in the Sensor log with its source line quoted, so the box only points there. A fact every star rests on says "behind every star".
+- **Known unknowns**: open questions you can state. Each is an anomaly or an away team ticket that blocks the stars behind it. A question too loose to ticket stays under Nebulae until it sharpens.
+- **Unknown knowns**: facts that likely sit in a record or in the user's head but were never written down, such as a rule the user always applies or how the work crosses an existing feature. Each gets an away team to find the record, or a `Confirm:` line the user answers in one word, before any star rests on it. Take the `Confirm:` line when no record is likely. Once the user confirms, the fact moves to the Sensor log, quoting the user, and its star loses that unknown at the next redraw.
+- **Unknown unknowns**: these can't be listed. Name the riskiest star and the timebox or probe that covers it. Then search the tracker's earlier charts for their `Surfaced:` lines, and name each kind of surprise seen before on a `Seen before:` line, with the check that covers it here. Every chart names two on its own: fallout on content no star names, checked by `warp`'s fallout sweep, and an approved example whose test can't fail, checked by `warp`'s pre-flight review of the tests. `make-it-so`'s SETTLE.md adds a `Surfaced:` line for each asteroid belt a build hit.
+
+A box is never left empty without saying why: a box with nothing in it holds one line with the reason, such as "None: the spec answers every question."
+
+## Tickets
+
+Blocking is the tracker's own relation. Ticket a question as soon as you can state it sharply, even when it's blocked. A question you can't state sharply yet goes under Nebulae, as loosely as you see it. Leave a nebula unsliced.
+
+Every ticket also carries the labels the repo's tracker docs require of any ticket. An anomaly, away team, probe or task asks one question and carries the label `starchart:<kind>`: `starchart:anomaly`, `starchart:away-team`, `starchart:probe` or `starchart:task`.
+
+```markdown
+## Question
+
+<one question>
+```
+
+An anomaly or a probe resolves only through the human's own answer.
+
+A star carries no `starchart:` label. Its body has these parts and nothing else:
+
+```markdown
+<one sentence: what this star makes true>
+
+## Examples
+
+Given <situation>
+When <event>
+Then <result>
+
+## Done when
+
+- <only for work with no behaviour to show: a refactor, infrastructure, speed>
+
+## Pointers
+
+- <decision record, star chart, the seam the change goes in>
+```
+
+The Examples are the star's spec, and the only one: the sentence and the Pointers are for the person reading. "Done when" stands in for Examples only when the work has no behaviour to show. The `examples` skill writes the Examples, and a star is ready once the human approves them. Size a star to one session: a thin slice through every layer that can be shown working on its own. A refactor too wide for one green slice goes in three stars: add the new form beside the old, move callers over in batches, then delete the old form.
+
+## Filing a star
+
+Every new star, and every anomaly, probe or task that holds build work, is filed this way, whichever skill files it. A research ticket closed as it opens is a record and skips it. A parked waiting ticket skips it only while it holds no build work.
+
+Found work, such as a bug a test caught or a gap a review named, is filed this way too, as "Sharding" step 4 says.
+
+1. **Slice.** Each star is a vertical slice: a thin path through every layer, shown working on its own, sized to one session, and landing green on the base the repo's rules name. A change that can't land green in one step goes expand–contract: build the new form beside the old, move the callers, then delete the old. A plan that takes something away and puts it back later ("reset to stock, then re-add") is no slice: re-cut it. An integration branch is a last resort, for a wide refactor only. Where any star lands follows `lay-course`'s "Where work lands". Done when every star stands on its own.
+2. **Draft** each star's Given / When / Then examples with `examples`, steps 1 and 2. Done when every star has its examples, or "Examples: not written yet".
+3. **Approve the examples before filing.** Put every star's examples in the effort's one `red-pen` draft file, a section per star with an approve box. The star bodies stay out of it. The user approves, edits or cuts there. A star waits on the close, and is filed with the examples the user left. A star whose examples the user cut is filed with "Examples: not written yet". Done when each star filed holds the user's examples.
+4. **Check the label.** Apply "Ready to warp" to the chart. Done when the chart's `starchart:afk` label matches it.
+
+## Sharding
+
+A star chart is one effort: one warp, one branch, one pull request. Shard a chart before its examples go to `red-pen` (`mission-brief`) and before a course is plotted on it (`lay-course`, `warp`).
+
+1. **Judge each planned star against the chart's own mission** and its milestone (alpha, a release). A star the milestone ships without leaves the chart. A star that keeps play bad or the tool painful stays. A polish chart keeps its polish: polish is its mission. Done when each planned star stays or is marked to leave.
+2. **Rehome each star that leaves**, with a comment on it naming where it went and why:
+   - A new feature gets its own seed chart.
+   - Work another effort owns (an asset pass, loot tables) goes on that effort's chart.
+   - Polish goes on the polish chart for its area. When there is none, the shard opens one.
+
+   Done when every star that left sits on another chart.
+3. **Split past the cap.** A chart with more than 8 planned stars splits into sibling charts, each with its own mission, linked to each other as related. A `Chart cap:` line in `docs/agents/domain.md` sets another number, and `off` skips this step. Done when every chart holds 8 planned stars or fewer, or the cap the repo sets.
+4. **Keep found work.** Found work never counts toward the cap. It goes on the chart the build is working, and is built on the same branch and pull request. No star moves off a chart once a build has started on it. Done when every found-work star sits on the active chart.
+
+## Drawing the chart
+
+Every chart shows how its tickets connect, drawn from the tracker, never by hand. Redraw after every change to the chart's children or blockers.
+
+1. **Use the tracker's draw command** when the tracker file's "Star chart operations" names one (such as `<tracker cli> draw <chart>`). Done when the command reports the drawing.
+2. **Otherwise, list the tickets** in `<scratch>/tickets.json`, one object per child, read from the tracker this turn:
+
+   ```json
+   [{"key": "KEY-1", "kind": "anomaly", "title": "<title>", "open": true,
+     "assigned": false, "blocked_by": ["KEY-2"], "related": ["KEY-9"]},
+    {"key": "KEY-3", "kind": "star", "title": "<title>", "open": true,
+     "known": 3, "unknown": 1},
+    {"black_hole": "<the black hole>", "threatens": ["KEY-1"]}]
+   ```
+
+   `kind` is the `starchart:` kind, or `star`. `blocked_by` holds only open blockers, on this chart or another. `related` holds tickets the chart doesn't own. A star's `known` counts the Sensor log lines behind it, and its `unknown` counts the open lines under Known unknowns and Unknown knowns that name it. Count both afresh at every redraw. A known unknown counts here and blocks through `blocked_by` too; a `Confirm:` line has no ticket, so only its count keeps the star off the frontier. Each line under Black holes gets a `black_hole` object, with the tickets its line threatens. Done when every child of the chart and every black hole has one object.
+3. **Draw it** with `python3 <this skill's folder>/scripts/draw-chart.py <scratch>/tickets.json`. During a warp, add `--course <KEY>,<KEY>` for the course and its targets. Done when it prints a Mermaid flowchart.
+4. **Put it under `## Chart`.** When the tracker file says the tracker draws Mermaid, paste the printed block. When it says it can't, add `--png <scratch>/chart.png`, attach the image the way the tracker file says, and show it in the body the way it says. Done when the chart's page shows the drawing.
+
+The drawing shows the course ahead, so closed tickets stay out of it. It marks the frontier with a thick border and the course in yellow, keeps a star with an unknown left off the frontier, shows each star's counts as `(<n> known, <n> unknown)`, and draws each black hole as a dark circle beside the open tickets it threatens. A ticket with no line to another stacks in a column of its kind.
+
+## Answer pages
+
+A warp's course, a council's next moves once Frodo has chosen the road, and a probe's questions open as a page in the user's browser, so they answer without switching windows. The page is `interactive-page`'s.
+
+1. **Write `<scratch>/page.md`**, a planning page as [interactive-page](../../writing/interactive-page/SKILL.md) says: a title, then each chart as an image line naming its SVG in the same folder, drawn with `draw-chart.py <scratch>/tickets.json --png <scratch>/<chart>.svg` (the output name picks the format), then the course as one ticked box per ticket in order, then one section per question with your pick marked. Done when every chart, ticket and question is in the file.
+2. **Open it** with `bash <interactive-page's folder>/scripts/open-page.sh <scratch>/page.md`, run from the repo in the background. Tell the user the page is open in a message that opens with the `🚪 Waiting on you:` line. Done when the script has exited.
+3. **Echo each answer in chat** before going on: read the file back, then give each question's key, the option marked `(x)`, and its note. An unticked ticket is dropped from the course. When the script exits with "no answer within", ask the same questions in chat. Done when the chat holds every answer.

@@ -1,0 +1,30 @@
+# Settle the loose ends
+
+Read this before calling an effort done, after every push to an open pull request, and after a merge. `make-it-so` step 4 runs it, and `warp`, `gamma-shift`, `ship-it` and `power-word-fix` point here.
+
+New developers pick work from the tracker and trust what a ticket says. So an effort isn't done until every ticket it touched says the truth. A **touched** ticket is one the branch name, a commit or the pull request body names, or one the work proved wrong.
+
+## Steps
+
+1. **List the touched tickets** from the branch name, `git log <base>..HEAD`, the pull request body, and any ticket the work proved wrong. Read the tracker again now: other sessions edit it too. Done when you have the list.
+2. **Give each ticket a verdict**, one of four:
+   - **Closes**: the diff does all of it, and the change is live once it merges. Add a `Closes <ticket>` line to the pull request body, one ticket per line. A change that goes live only after a step the user runs (a rebuild, a plugin update, a restart, a deploy) is **Waits** until that step is done, with the steps in its `Waits on:` line.
+   - **Narrowed**: the diff does part of it. Rewrite the ticket's body with `human-voice` to state only what remains.
+   - **Excluded**: nothing ships for it. Take it out of the pull request body and the commits to come, except a key already in the branch name or an earlier commit: that one stays as a `Refs <ticket>` line, which Q7 in `make-it-so` reads. Its ticket's state stays as it is. "Don't build it", "not here", "not now" or "not in this pull request" makes a ticket Excluded, never closed or declined: a ticket closes unbuilt only when the user says to close or decline it.
+   - **Waits**: the rest can't be done now, because it waits on the user's decision, another person, a deploy or release, or a repo out of reach. Park it with the "Park a ticket" action in `docs/agents/issue-tracker.md`, on the open star chart that fits it best as its parent, never loose when a chart fits (no hook backs this yet: the familiar's snag shapes catch it), with a `Waits on: <who or what>` line in its body, naming a ticket, pull request, tag or person `gamma-shift` can check. Narrow the body first when part of it ships. A `warp`'s effort has no Waits on the user's decision: `warp`'s "Mid-flight questions" builds each answer in its pull request.
+
+   Small waiting work that one line covers goes in `.todo` with `standing-orders` in place of a ticket. Work with real impact always gets a ticket or a star. Strike each `.todo` line whose work is done or whose star or ticket has closed.
+
+   A ticket blocked by a ticket its body never names as a hard dependency holds a link only a person can remove where the tracker can't (Plane): name it in the report and ask the user to remove the link.
+
+   A ticket that records a decision (an answered anomaly or away team, a decision record) also gets `plot-twist`'s sweep: search the repo's skills, docs and scripts for text that states the old rule, and fix it in the same effort. A skill or script left holding the old rule is what the next session reads as the rule.
+
+   A comment settles nothing. Done when every ticket on the list has a verdict in the tracker or the body, and every decision a ticket records has had its sweep.
+3. **Make the body true.** Read the pull request body against `git diff <base>...HEAD` sentence by sentence. Rewrite a superseded sentence in place with `human-voice`, never under an "update" heading, and keep `ship-it`'s sections. Done when every sentence matches the diff.
+4. **Log the surprises.** For each asteroid belt the effort found, an unknown unknown that became known, add a `Surfaced:` line to the Unknown unknowns box of its star chart's Knowns, as [STAR-CHART.md](../../commands/lay-course/STAR-CHART.md)'s chart body shows: the surprise, the star it was found building, and what it cost, such as a parked slice, a retry or an hour. Done when each asteroid belt has its line, or the effort has no chart.
+5. **Engrave the snags**, once, before you call the effort done. List each snag the effort hit: a red check, a crash, a retry, or a correction from the user. Run `engrave` on each one, and on each review finding the effort fixed, from a person or a review agent: the best fix makes the mistake impossible next time. Done when the report names each snag with the law built for it, or says why it needs none.
+6. **After the merge**, close by hand any ticket still open that the pull request named, with a comment naming the pull request. Done when the tracker shows each one closed.
+
+A ticket whose state lags the work moves now: one the pull request names moves to the started state while the pull request is open, a parked one through the tracker's "Park a ticket" action, and the report names each move.
+
+Repeat step 3 after every push.

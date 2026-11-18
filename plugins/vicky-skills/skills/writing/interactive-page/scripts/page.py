@@ -1,0 +1,532 @@
+#!/usr/bin/env python3
+"""Open a Markdown file the user must read or fill in as a page in the browser.
+
+Usage: page.py <file.md> [--timeout SECONDS]
+
+The page shows the file as it stands, with a control for each part the user
+answers:
+
+  a ```text block            editable text           (text.N)
+  a "- [ ] approve" line     a box to tick           (approve.N)
+  a "- [x] <label>" line     a box to tick, labelled (box.N)
+  a "![name](chart.svg)" line the chart drawn inline, beside the file
+  a "1. [ ] check" line      one box per mark        (mark.N: x, ~, -, or blank)
+  a "notes:" or "- TAG:" line a line of text         (field.N)
+  each ```text block        a comment box under it  (comment.N)
+  "- ( ) option" lines       one choice per run of them (choice.N)
+  the end of the page        a comment box           (note)
+  any approve box            "approve all" beside Done, ticking every one (approve_all)
+
+When the user presses Done, the answers are written back into the file in
+its own form, and the script exits 0. A comment lands as a "Comment: ..."
+line under its block, the chosen option is marked "(x)", and the comment at
+the end lands under a closing "## Anything else" heading. Answers that change nothing leave the file
+byte for byte as it was. The page listens on this machine only. With no
+answer before the timeout (four hours by default) it exits 2 and the file
+stays as it was.
+"""
+import base64
+import html
+import http.server
+import os
+import re
+import subprocess
+import sys
+import threading
+import urllib.parse
+import webbrowser
+
+# Done sends each drawing's PNG too, so a page of many sketches runs to megabytes.
+LIMIT = 32 * 1024 * 1024
+MARKS = ["x", "~", "-", " "]
+# The page owns each mark's label, so a legend line typed by hand can never
+# drop or swap one.
+LABELS = {"x": "completed as expected", "~": "completed with changes", "-": "failed to complete", " ": "not tested at all"}
+STYLE = """:root{color-scheme:light dark}
+body{font-family:sans-serif;margin:1.5rem;max-width:60rem}
+textarea{width:100%;min-height:4rem;font-family:monospace}
+.text{white-space:pre-wrap;margin:.2rem 0}
+input[type=text]{width:70%}
+button{font-size:1.1rem;padding:.4rem 1.2rem}
+.chart{margin-bottom:2rem;overflow-x:auto}
+.chart svg{max-width:100%;height:auto;cursor:zoom-in;background:#fff}
+p.text{margin:.6rem 0}
+code{background:#8882;padding:0 .25rem;border-radius:3px}
+.card{border:1px solid #8886;border-radius:8px;padding:.7rem 1rem;margin:.8rem 0}
+.card .act{font-weight:bold}
+.card .exp{margin:.2rem 0 .5rem}
+.card .meta{font-size:.85rem;opacity:.75;margin:.2rem 0}
+.marks label{margin-right:1rem}
+.card input[type=text]{width:100%}
+details{margin:.6rem 0}
+summary{cursor:pointer;opacity:.85}
+details.quick label{display:block;margin:.2rem 0}"""
+# Each click zooms a chart to 2x, then 3x the window width, then back to fit.
+ZOOM = """function zoom(c){const s=c.querySelector("svg"),n=(+c.dataset.z||1)%3+1;c.dataset.z=n;
+s.style.maxWidth=n>1?"none":"";s.style.width=n>1?c.clientWidth*n+"px":""}"""
+CHECK = re.compile(r"^(\d+\. )\[(.)\] (.*)$")
+FIELD = re.compile(r"^(\s*(?:notes|- [A-Z]+)):\s?(.*)$")
+APPROVE = re.compile(r"^- \[( |x)\] approve$")
+CHOICE = re.compile(r"^- \(( |x)\) (.*)$")
+BOX = re.compile(r"^- \[( |x)\] (.+)$")
+# A chart is an SVG file in the same folder as the page file.
+CHART = re.compile(r"^!\[[^\]]*\]\(([^/\\()\s]+\.svg)\)$")
+# A drawing section: draw.io XML in a ```drawio block, drawn with the draw.io
+# web app that drawing-board fetches to DRAWIO_HOME. Embed mode with stealth
+# on makes no request past this machine.
+DRAWIO = "/drawio/index.html?embed=1&proto=json&spin=1&stealth=1&offline=1&noExitBtn=1&noSaveBtn=1&saveAndExit=0"
+DRAWING_JS = """const frames={};let left=0;
+// A draw.io frame takes focus as it loads, and the browser scrolls the page to
+// it: with several frames the page lands at the last one. Until every frame has
+// loaded, and a second after, the page stays where the user last put it.
+let userY=scrollY,userAt=0,settled=0;["wheel","keydown","touchmove","mousedown"].forEach(t=>addEventListener(t,()=>userAt=Date.now(),{capture:true,passive:true}));
+const holding=()=>Object.values(frames).some(v=>v===1)||Date.now()-settled<1000;
+addEventListener("scroll",()=>{if(!holding()||Date.now()-userAt<1500)userY=scrollY;else scrollTo(0,userY)},{passive:true});
+function send(n,msg){document.getElementById("dio"+n).contentWindow.postMessage(JSON.stringify(msg),location.origin)}
+addEventListener("message",ev=>{if(ev.origin!==location.origin)return;let m;try{m=JSON.parse(ev.data)}catch(_){return}
+const n=Object.keys(frames).find(k=>document.getElementById("dio"+k).contentWindow===ev.source);if(n===undefined)return;
+const xml=document.getElementsByName("drawing_xml."+n)[0],png=document.getElementsByName("drawing_png."+n)[0];
+if(m.event==="init")send(n,{action:"load",xml:xml.value,autosave:1});
+else if(m.event==="load"){frames[n]=2;settled=Date.now();scrollTo(0,userY)}
+else if(m.event==="autosave"){xml.value=m.xml;fetch("/drawing/"+n,{method:"POST",body:new URLSearchParams({xml:m.xml})})}
+else if(m.event==="export"){png.value=m.data;if(--left===0)finish()}});
+// draw.io asks to confirm leaving while its drawing reads as modified, so a
+// user who pressed Done would think it never landed: clear the flag and drop
+// each frame before the form goes.
+function finish(){Object.keys(frames).forEach(n=>{send(n,{action:"status",modified:false});document.getElementById("dio"+n).remove()});document.forms[0].submit()}
+// Done exports only the frames whose drawing loaded, and sends the form after
+// five seconds whatever answers: a frame that failed to load never answers.
+function done(ev){if(left<0)return true;const ns=Object.keys(frames).filter(n=>frames[n]===2);
+if(!ns.length){finish();return false}ev.preventDefault();left=ns.length;setTimeout(()=>{if(left>0){left=0;finish()}},5000);
+ns.forEach(n=>send(n,{action:"export",format:"png",xml:document.getElementsByName("drawing_xml."+n)[0].value}));return false}"""
+
+
+INLINE = re.compile(r"`([^`]+)`|\*\*([^*]+)\*\*|(?<![\w*])\*([^*\s][^*]*)\*(?![\w*])|(?<!\w)_([^_\s][^_]*)_(?!\w)")
+HEADER = ("signed off:", "proven by:")
+META = re.compile(r"^\s+(person|kit):\s*(.*)$")
+
+
+def inline(text):
+    """A line's text as HTML, with Markdown code spans, bold and italics drawn."""
+    out, at = [], 0
+    for m in INLINE.finditer(text):
+        out.append(html.escape(text[at:m.start()]))
+        code, bold, em, em2 = m.groups()
+        if code is not None:
+            out.append(f"<code>{html.escape(code)}</code>")
+        elif bold is not None:
+            out.append(f"<strong>{html.escape(bold)}</strong>")
+        else:
+            out.append(f"<em>{html.escape(em or em2)}</em>")
+        at = m.end()
+    out.append(html.escape(text[at:]))
+    return "".join(out)
+
+
+def fence_end(lines, start):
+    """The index of the line that closes the fenced block opened at `start`,
+    or len(lines) when the block runs to the end."""
+    end = start + 1
+    while end < len(lines) and lines[end] != "```":
+        end += 1
+    return end
+
+
+def unglue(text):
+    """The text with each drawio block's closing fence on its own line. Output
+    with no final newline, written out and followed by a fence, glues the fence
+    to the last XML line, and the block then runs on to the next fence."""
+    lines, inside = text.split("\n"), False
+    out = []
+    for line in lines:
+        if not inside:
+            inside = line == "```drawio"
+        elif line != "```" and line.endswith("```"):
+            out.append(line[:-3])
+            line, inside = "```", False
+        else:
+            inside = line != "```"
+        out.append(line)
+    return "\n".join(out)
+
+
+def parse(text, folder):
+    """The file as parts: ("line", s), ("block", [lines]), ("approve", ticked),
+    ("box", ticked, label), ("chart", line, svg), ("check", prefix, mark, rest),
+    ("field", label, value), ("comment",), ("choice", question, picked, option).
+    A chart line whose file is missing stays a plain line."""
+    parts, lines, i, question = [], text.split("\n"), 0, -1
+    while i < len(lines):
+        line = lines[i]
+        if line == "```drawio":
+            end = fence_end(lines, i)
+            parts.append(("line", line))
+            parts.append(("drawing", lines[i + 1:end]))
+            if end < len(lines):
+                parts.append(("line", "```"))
+            i = end + 1
+            continue
+        if line == "```text":
+            end = i + 1
+            while end < len(lines) and lines[end] != "```":
+                end += 1
+            parts.append(("line", line))
+            parts.append(("block", lines[i + 1:end]))
+            if end < len(lines):
+                parts.append(("line", "```"))
+            parts.append(("comment",))
+            i = end + 1
+            continue
+        if m := APPROVE.match(line):
+            parts.append(("approve", m.group(1) == "x"))
+        elif m := BOX.match(line):
+            parts.append(("box", m.group(1) == "x", m.group(2)))
+        elif (m := CHART.match(line)) and os.path.isfile(svg := os.path.join(folder, m.group(1))):
+            with open(svg) as handle:
+                parts.append(("chart", line, handle.read()))
+        elif m := CHECK.match(line):
+            parts.append(("check", m.group(1), m.group(2), m.group(3)))
+        elif m := FIELD.match(line):
+            parts.append(("field", m.group(1), m.group(2)))
+        elif m := CHOICE.match(line):
+            # A run of option lines is one question.
+            if not parts or parts[-1][0] != "choice":
+                question += 1
+            parts.append(("choice", question, m.group(1) == "x", m.group(2)))
+        else:
+            parts.append(("line", line))
+        i += 1
+    return parts
+
+
+def numbered(parts):
+    """Each part with the index of its control among parts of its kind."""
+    seen = {}
+    for part in parts:
+        n = seen.get(part[0], 0)
+        seen[part[0]] = n + 1
+        yield part, n
+
+
+def page(name, parts):
+    e = html.escape
+    out = [f"<!doctype html><meta charset=utf-8><title>{e(name)}</title><style>{STYLE}</style><script>{ZOOM}</script>",
+           '<form method=post action="/done" onsubmit="return done(event)">', f"<script>{DRAWING_JS}</script>"]
+    home = os.environ.get("DRAWIO_HOME", "")
+    canvas = bool(home) and os.path.isfile(os.path.join(home, "index.html"))
+    card = quick = False
+    header = [part[1] for part in parts if part[0] == "line" and part[1].startswith(HEADER)]
+
+    def close():
+        nonlocal card, quick
+        if quick:
+            out.append("</details>")
+        if card:
+            out.append("</div>")
+        card = quick = False
+
+    for part, n in numbered(parts):
+        kind = part[0]
+        if kind == "line":
+            line = part[1]
+            if line.startswith("#"):
+                close()
+                level = min(len(line) - len(line.lstrip("#")), 6)
+                out.append(f"<h{level}>{inline(line.lstrip('#').strip())}</h{level}>")
+            elif line.startswith("Mark each item:"):
+                continue  # mutant-ok: the last branch of the loop, so pass acts the same
+            elif line.startswith(HEADER):
+                # Signed off and proven by fold into one small header, where the first stands.
+                if line == header[0]:
+                    rows = "".join(f"<p class=text>{inline(h)}</p>" for h in header)
+                    out.append(f"<details><summary>Signed off and proven by</summary>{rows}</details>")
+            elif line == "quick notes:":
+                close()
+                quick_at = len(out)
+                out.append("<details class=quick><summary>Quick notes: BUG, QUIRK, FRICTION, UGLY, IDEA, RULE, WIP, QUESTION</summary>")
+                quick = True
+            elif card and (m := META.match(line)):
+                out.append(f"<div class=meta>{e(m.group(1))}: {inline(m.group(2))}</div>")
+            elif line.strip() == "":
+                if card:
+                    close()
+            elif line not in ("```text", "```drawio", "```"):
+                close()
+                out.append(f"<p class=text>{inline(line)}</p>")
+        elif kind == "block":
+            body = "\n".join(part[1])
+            out.append(f'<textarea name="text.{n}" rows="{max(3, len(part[1]) + 1)}">{e(body)}</textarea>')
+        elif kind == "drawing":
+            body = e("\n".join(part[1]))
+            if canvas:
+                out.append(f'<script>frames[{n}]=1</script><iframe id="dio{n}" src="{DRAWIO}" '
+                           f'style="width:100%;height:80vh;border:1px solid #8886"></iframe>'
+                           f'<input type=hidden name="drawing_xml.{n}" value="{body}">'
+                           f'<input type=hidden name="drawing_png.{n}" value="">')
+            else:
+                # Without the draw.io app the drawing is its XML, edited as text.
+                out.append(f'<textarea name="drawing_xml.{n}" rows="8">{body}</textarea>')
+        elif kind == "approve":
+            ticked = " checked" if part[1] else ""
+            out.append(f'<label><input type=checkbox name="approve.{n}"{ticked}> approve</label>')
+        elif kind == "box":
+            ticked = " checked" if part[1] else ""
+            out.append(f'<label><input type=checkbox name="box.{n}"{ticked}> {inline(part[2])}</label><br>')
+        elif kind == "chart":
+            out.append(f'<div class=chart onclick="zoom(this)">{part[2]}</div>')
+        elif kind == "check":
+            # Each item is a card: the action, what to expect, the mark, then its notes.
+            close()
+            card = True
+            action, _, expect = part[3].partition("→")
+            radios = "".join(
+                f'<label><input type=radio name="mark.{n}" value="{e(m)}"{" checked" if m == part[2] else ""}> '
+                f'{e(LABELS[m])}</label>' for m in MARKS)
+            out.append(f'<div class=card><div class=act>{e(part[1])}{inline(action.strip())}</div>')
+            if expect.strip():
+                out.append(f"<div class=exp>→ {inline(expect.strip())}</div>")
+            out.append(f"<div class=marks>{radios}</div>")
+        elif kind == "field":
+            if quick and part[2]:
+                # A block holding a note opens, so the note shows.
+                out[quick_at] = "<details class=quick open>" + out[quick_at].removeprefix("<details class=quick>")
+            out.append(f'<label>{e(part[1].strip().lstrip("- "))}: <input type=text name="field.{n}" value="{e(part[2])}"></label>')
+        elif kind == "comment":
+            close()
+            out.append(f'<textarea name="comment.{n}" placeholder="Comment"></textarea>')
+        elif kind == "choice":
+            ticked = " checked" if part[2] else ""
+            out.append(f'<label><input type=radio name="choice.{part[1]}" value="{e(part[3])}"{ticked}> {inline(part[3])}</label><br>')
+    close()
+    out.append('<h2>Anything else</h2><textarea name="note" placeholder="Comment"></textarea>')
+    # Any approve box gets one more beside Done that ticks them all.
+    approve_all = ('<label><input type=checkbox name="approve_all"> approve all</label> '
+                   if any(part[0] == "approve" for part in parts) else "")
+    out.append(f"<p>{approve_all}<button type=submit>Done</button></p></form>")
+    return "\n".join(out)
+
+
+def answered(parts, form):
+    """The file's text with the form's answers written in."""
+    def got(key, default):
+        return form.get(key, [default])[0].replace("\r\n", "\n")
+
+    def line(key, default):
+        return got(key, default).replace("\n", " ").strip()
+
+    out, picture = [], None
+    for part, n in numbered(parts):
+        kind = part[0]
+        if kind in ("line", "chart"):
+            out.append(part[1])
+            # A drawing's PNG is named on the line after its closing fence.
+            if picture and part[1] == "```":
+                out.append(picture)
+                picture = None
+        elif kind == "drawing":
+            out.extend(got(f"drawing_xml.{n}", "\n".join(part[1])).rstrip("\n").split("\n"))
+            name = got(f"drawing_png_file.{n}", "")
+            picture = f"![drawing {n}]({name})" if name else None
+        elif kind == "block":
+            text = got(f"text.{n}", "\n".join(part[1])).rstrip("\n")
+            # Text the user left alone keeps its lines exactly, an empty
+            # block and a trailing blank line included.
+            # A typed fence line would close the block early on the next read,
+            # so it is written back indented, where the parser reads it as text.
+            out.extend(part[1] if text == "\n".join(part[1]).rstrip("\n")
+                       else [" ```" if typed == "```" else typed for typed in text.split("\n")])
+        elif kind == "approve":
+            out.append(f"- [{'x' if f'approve.{n}' in form or 'approve_all' in form else ' '}] approve")
+        elif kind == "box":
+            out.append(f"- [{'x' if f'box.{n}' in form else ' '}] {part[2]}")
+        elif kind == "check":
+            mark = got(f"mark.{n}", part[2])
+            out.append(f"{part[1]}[{mark if mark in MARKS else part[2]}] {part[3]}")
+        elif kind == "field":
+            value = line(f"field.{n}", part[2])
+            out.append(f"{part[1]}:" + (f" {value}" if value else ""))
+        elif kind == "comment":
+            comment = line(f"comment.{n}", "")
+            if comment:
+                out.append(f"Comment: {comment}")
+        elif kind == "choice":
+            chosen = form.get(f"choice.{part[1]}", [None])[0]
+            picked = part[2] if chosen is None else chosen == part[3]
+            out.append(f"- ({'x' if picked else ' '}) {part[3]}")
+    note = line("note", "")
+    if note:
+        end = len(out) - 1 if out and out[-1] == "" else len(out)
+        out[end:end] = ["", "## Anything else", f"Comment: {note}"]
+    return "\n".join(out)
+
+
+def use_desktop_env():
+    """Give the browser the desktop session's environment, not this one.
+
+    A session started in a dev shell carries that shell's library and tool
+    paths, and a desktop opener such as kde-open crashes loading them. The
+    user's systemd session holds the environment the desktop itself started
+    with. Where it can't be read, only LD_LIBRARY_PATH is dropped. BROWSER
+    is the user's own choice of browser, so it is kept either way.
+    """
+    browser = os.environ.get("BROWSER")
+    try:
+        listed = subprocess.run(["systemctl", "--user", "show-environment"],
+                                capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        listed = None
+    desktop = {}
+    if listed is not None and listed.returncode == 0:
+        for line in listed.stdout.splitlines():
+            key, sep, value = line.partition("=")
+            # systemd writes a value holding special characters as $'...';
+            # such a value is skipped rather than half-decoded.
+            if sep and not value.startswith("$'"):
+                desktop[key] = value
+    if desktop:
+        os.environ.clear()
+        os.environ.update(desktop)
+    else:
+        os.environ.pop("LD_LIBRARY_PATH", None)
+    if browser is not None:
+        os.environ["BROWSER"] = browser
+
+
+def serve_form(text, path, on_post, timeout, on_drawing=None):
+    """Serve the page `text` on this machine only and wait for one POST to
+    `path`. `on_post` takes the posted body, URL-encoded, and returns nothing.
+    `on_drawing` takes a drawing's number and its XML each time it changes.
+    Files under /drawio/ come from DRAWIO_HOME. Returns False when no answer
+    came before the timeout."""
+    done = threading.Event()
+    # Read before use_desktop_env swaps the environment for the desktop's.
+    home = os.environ.get("DRAWIO_HOME", "")
+
+    def foreign(headers):
+        # Any other web page open in the browser can post a form here, and
+        # the browser names that page in Origin. Only this page's own posts,
+        # and clients that send no Origin, are taken.
+        sent = headers.get("Origin")
+        return headers.get("Host") != origin.removeprefix("http://") or (sent is not None and sent != origin)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass  # mutant-ok: a pass line has no other form
+
+        def reply(self, code, body):
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if home and self.path.startswith("/drawio/"):
+                rel = urllib.parse.unquote(self.path[len("/drawio/"):].split("?", 1)[0]) or "index.html"
+                file = os.path.realpath(os.path.join(home, rel))
+                if not file.startswith(os.path.realpath(home) + os.sep) or not os.path.isfile(file):
+                    self.reply(404, b"Not found.")
+                    return
+                kind = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml",
+                        ".png": "image/png", ".json": "application/json"}.get(os.path.splitext(file)[1], "application/octet-stream")
+                with open(file, "rb") as handle:
+                    body = handle.read()
+                self.send_response(200)
+                self.send_header("Content-Type", kind)
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self.reply(200, text)
+
+        def do_POST(self):
+            size = int(self.headers.get("Content-Length") or 0)
+            live = re.fullmatch(r"/drawing/(\d+)", self.path)
+            if live and on_drawing and 0 <= size <= LIMIT and not done.is_set() and not foreign(self.headers):
+                form = urllib.parse.parse_qs(self.rfile.read(size).decode())
+                on_drawing(int(live.group(1)), form.get("xml", [""])[0])
+                self.reply(200, b"Kept.")
+                return
+            if self.path == path and size > LIMIT and not done.is_set():
+                self.reply(413, b"<!doctype html><meta charset=utf-8><p>Too large to send, so nothing was sent. Go back: the page and its drawings are still open. Tell the agent the page is too big.</p>")
+                return
+            if self.path != path or not 0 <= size <= LIMIT or done.is_set() or foreign(self.headers):
+                self.reply(400, b"Not taken.")
+                return
+            on_post(self.rfile.read(size).decode())
+            self.reply(200, b"<!doctype html><meta charset=utf-8><p>Sent. You can close this tab.</p>")
+            done.set()
+
+    # Bound to loopback: the page answers this machine only.
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    origin = f"http://127.0.0.1:{server.server_address[1]}"
+    url = origin + "/"
+    print(f"page: open {url}", file=sys.stderr, flush=True)
+    use_desktop_env()
+    if not webbrowser.open(url):
+        print(f"page: no browser opened; give the user {url}", file=sys.stderr, flush=True)
+    answered_in_time = done.wait(timeout)
+    server.shutdown()
+    return answered_in_time
+
+
+def serve(path, timeout):
+    with open(path) as handle:
+        original = handle.read()
+    if (fixed := unglue(original)) != original:
+        with open(path, "w") as handle:
+            handle.write(fixed)
+        original = fixed
+    parts = parse(original, os.path.dirname(os.path.abspath(path)))
+
+    latest = {}
+
+    def keep_drawing(n, xml):
+        # Each change lands in the file at once: only that drawing's block is replaced.
+        latest[n] = xml
+        with open(path) as handle:
+            lines = handle.read().split("\n")
+        starts = [i for i, line in enumerate(lines) if line == "```drawio"]
+        if n < len(starts):
+            lines[starts[n] + 1:fence_end(lines, starts[n])] = xml.rstrip("\n").split("\n")
+        with open(path, "w") as handle:
+            handle.write("\n".join(lines))
+
+    def write_back(body):
+        form = urllib.parse.parse_qs(body, keep_blank_values=True)
+        for n, xml in latest.items():
+            form.setdefault(f"drawing_xml.{n}", [xml])
+        stem = os.path.splitext(os.path.basename(path))[0]
+        for key in [k for k in form if k.startswith("drawing_png.")]:
+            data = form[key][0]
+            if data.startswith("data:image/png;base64,"):
+                n = key.split(".", 1)[1]
+                name = f"{stem}.drawing-{n}.png"
+                with open(os.path.join(os.path.dirname(os.path.abspath(path)), name), "wb") as handle:
+                    handle.write(base64.b64decode(data.split(",", 1)[1]))
+                form[f"drawing_png_file.{n}"] = [name]
+        new = answered(parts, form)
+        with open(path) as handle:
+            now = handle.read()
+        if new != now:
+            with open(path, "w") as handle:
+                handle.write(new)
+
+    if not serve_form(page(path, parts).encode(), "/done", write_back, timeout, keep_drawing):
+        print(f"page: no answer within {timeout} seconds", file=sys.stderr)
+        sys.exit(2)
+
+
+def main(argv):
+    args, timeout = list(argv), 4 * 3600.0
+    if "--timeout" in args:
+        at = args.index("--timeout")
+        timeout = float(args[at + 1])
+        del args[at:at + 2]
+    if len(args) != 1:
+        print(__doc__.strip().splitlines()[2], file=sys.stderr)
+        sys.exit(2)
+    serve(args[0], timeout)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

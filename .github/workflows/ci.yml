@@ -469,6 +469,12 @@ jobs:
         run: tests/todo-sh.test.sh
       - name: Hook audit counts refusals
         run: tests/hook-audit.test.sh
+      - name: AGENTS.md is one path
+        run: tests/agents-doc.test.sh
+      - name: Long skills keep reference behind pointers
+        run: tests/skill-splits.test.sh
+      - name: Every relative path in the skills resolves
+        run: tests/skill-paths-resolve.test.sh
       - name: Mutation proof is current
         run: python3 tests/mutate-hooks.py --check
       - name: Red-first check
