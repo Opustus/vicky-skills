@@ -16,7 +16,9 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Main runs near four minutes; the cap leaves room for a slow runner and
+    # still stops a hung step fast.
+    timeout-minutes: 8
     steps:
       # A draft fails here and runs nothing else. Skipping would report as
       # passed and let a draft merge.
@@ -375,6 +377,10 @@ jobs:
         run: tests/pkill-guard.test.sh
       - name: review-brief guard decisions
         run: tests/review-brief-guard.test.sh
+      - name: opponent-wait guard decisions
+        run: tests/opponent-wait-guard.test.sh
+      - name: prose-strip reads titles and messages
+        run: tests/prose-strip.test.sh
       - name: read-item edges
         run: tests/read-item.test.sh
       - name: todo.sh edges
