@@ -76,13 +76,43 @@ scorecard_check() {
     { echo "$1: scorecard failed on $2, so this level has no result."; return 1; }
 }
 
+# unmerged_policy: this checkout holds a SECURITY.md the default branch lacks,
+# so scorecard, which reads the default branch, has not seen it yet.
+unmerged_policy() {
+  local base f # mutant-ok delete: no other function uses these names
+  base=$(git -C "$top" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)
+  for f in SECURITY.md .github/SECURITY.md docs/SECURITY.md; do
+    git -C "$top" cat-file -e "$base:$f" 2>/dev/null && return 1
+  done
+  for f in SECURITY.md .github/SECURITY.md docs/SECURITY.md; do [ -f "$top/$f" ] && return 0; done
+  return 1
+}
+
 baseline() {
-  scorecard_check baseline Security-Policy || return 0
-  local score; score=$(jq -r '.checks[0].score' "$tmp/score.json")
-  case $score in
-    10) echo "baseline: scorecard's Security-Policy check found a security policy (run: scorecard --checks Security-Policy)." ;;
-    -1|null|"") echo "baseline: scorecard's Security-Policy check could not decide: $(jq -r '.checks[0].reason' "$tmp/score.json")." ;;
-    *) finding baseline "$(jq -r '.checks[0].reason' "$tmp/score.json")" scorecard "scorecard --checks Security-Policy" ;;
+  if scorecard_check baseline Security-Policy; then
+    local score; score=$(jq -r '.checks[0].score' "$tmp/score.json")
+    case $score in
+      10) echo "baseline: scorecard's Security-Policy check found a security policy (run: scorecard --checks Security-Policy)." ;;
+      -1|null|"") echo "baseline: scorecard's Security-Policy check could not decide: $(jq -r '.checks[0].reason' "$tmp/score.json")." ;;
+      *) if unmerged_policy; then
+           echo "baseline: unchecked: this checkout has a SECURITY.md, but scorecard reads the default branch. Run the level again once it merges."
+         else finding baseline "$(jq -r '.checks[0].reason' "$tmp/score.json")" scorecard "scorecard --checks Security-Policy"; fi ;;
+    esac
+  fi
+  reporting
+}
+
+# reporting: on GitHub, whether private vulnerability reporting is on, since a
+# policy that points at the Security tab has no way in while it is off.
+reporting() {
+  [ -n "$slug" ] || return 0
+  need baseline gh https://cli.github.com || return 0
+  local run="gh api repos/$slug/private-vulnerability-reporting" on
+  on=$(gh api "repos/$slug/private-vulnerability-reporting" --jq .enabled 2>/dev/null)
+  case $on in
+    true) echo "baseline: private vulnerability reporting is on (run: $run)." ;;
+    false) finding baseline "private vulnerability reporting is off, so the Security tab has no Report a vulnerability button" scorecard "$run" ;;
+    *) echo "baseline: could not read the private vulnerability reporting setting, so this part has no result." ;;
   esac
 }
 
