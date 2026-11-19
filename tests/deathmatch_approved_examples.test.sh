@@ -9,12 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)/plugins/vicky-skills"
 dm="$root/skills/shipping/deathmatch/scripts"
 hooks="$root/scripts"
 fail=0
-# Mutant runs repeat the memory-hog checks many times. Each kill in a systemd scope
-# raises a desktop notice, so inside a mutant run they take the fallback.
-hog=(python3 -c 'b = bytearray(256 * 1024 * 1024)'); quiet=()
-# A mutant that flips the scope choice would still kill a real hog, so in a
-# mutant run the hog only prints the memory error the fallback reads.
-[ -n "${MUTATE_HOOKS_INNER:-}" ] && { quiet=(CAP_NO_SCOPE=1); hog=(bash -c 'echo "Cannot allocate memory" >&2; exit 1'); }
+. "$(dirname "$0")/lib/cap-hog.sh"
 check() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
 export HOME="$t/home" CLAUDE_PLUGIN_DATA="$t/data"; mkdir -p "$HOME" "$CLAUDE_PLUGIN_DATA"
