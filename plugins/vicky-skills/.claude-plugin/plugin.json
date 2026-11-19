@@ -29,6 +29,7 @@
     "./skills/shipping/deathmatch",
     "./skills/building/sentinels",
     "./skills/shipping/ship-it",
+    "./skills/shipping/security",
     "./skills/building/spark-joy",
     "./skills/building/stacked-branches",
     "./skills/building/warp",
@@ -339,8 +340,8 @@
     },
     "guard_publish": {
       "type": "boolean",
-      "title": "Only you make a repository public",
-      "description": "Refuse making a repository public (gh repo edit or create, gh api, tea) unless your last message says public.",
+      "title": "Only you make a repository public, request a CVE or publish an advisory",
+      "description": "Refuse making a repository public (gh repo edit or create, gh api, tea) unless your last message says public, a CVE request unless it says CVE, and publishing a security advisory unless it says publish.",
       "default": true
     }
   }
