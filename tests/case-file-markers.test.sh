@@ -76,4 +76,58 @@ check "a PDF pdftotext can't read is refused" '[ "$status" -ne 0 ] && grep -q "c
 mkdir -p "$scratch/bin"; ln -sf "$(command -v python3)" "$scratch/bin/python3"
 out=$(PATH="$scratch/bin" "$scratch/bin/python3" "$kit/check.py" "$scratch/bad.pdf" 2>&1); status=$?
 check "a PDF with no pdftotext to read it is refused" '[ "$status" -ne 0 ] && grep -q "pdftotext is missing" <<<"$out"'
+# The contents list, the legend and the zip check, past their approved examples.
+tpl twins '<!-- KIND research -->\n<h2>Answer</h2>\n<h2>Answer</h2>\n<h2 id="keep">Kept</h2>\n<!-- CLAIM stock | 2026-11-18T20:40+00:00 | run 1 | It glowed -->\n'
+build "$fx/twins.html" "$fx/out/twins.html" --formats html,md >/dev/null; p=$(cat "$fx/out/twins.html" 2>/dev/null); md=$(cat "$fx/out/twins.md" 2>/dev/null)
+check "two sections of one name get two ids, and a given id stays" 'grep -q "<h2 id=\"answer\">" <<<"$p" && grep -q "<h2 id=\"answer-2\">" <<<"$p" && grep -q "<h2 id=\"keep\">Kept" <<<"$p" && grep -q "href=\"#keep\"" <<<"$p" && ! grep -q "id=\"keep\" id=" <<<"$p"'
+check "the Markdown legend is a table with its header rule" 'grep -A2 -x "| Label | Means |" <<<"$md" | sed -n 2p | grep -qx "| --- | --- |" && grep -q "^| stock | " <<<"$md"'
+tpl lone '<!-- KIND research -->\n<h2>Only</h2>\n<p>One section.</p>\n'
+build "$fx/lone.html" "$fx/out/lone.html" >/dev/null
+check "a page of one section has no contents list" '[ -s "$fx/out/lone.html" ] && ! grep -q "<nav" "$fx/out/lone.html"'
+tpl flat '<!-- KIND research -->\n<p>No sections.</p>\n<!-- CLAIM failed | 2026-11-18T20:40+00:00 | run 1 | It dimmed -->\n<!-- TIMELINE -->\n'
+build "$fx/flat.html" "$fx/out/flat.html" --formats html,md >/dev/null
+check "a page with no section still shows its legend" 'grep -q "class=\"legend\"" "$fx/out/flat.html" && grep -q "No sections" "$fx/out/flat.html"'
+tpl fold '<!-- KIND research -->\n<!-- FILE files/glow.frag -->\n'
+build "$fx/fold.html" "$fx/out/fold.html" --formats html,md >/dev/null
+check "a folded file starts its own Markdown paragraph" 'grep -qx "glow.frag (3 lines).*" "$fx/out/fold.md"'
+printf 'x\n' > "$fx/files/one.txt"; tpl one '<!-- KIND research -->\n<!-- FILE files/one.txt -->\n'
+build "$fx/one.html" "$fx/out/one.html" >/dev/null
+check "a one-line file says 1 line" 'grep -q "(1 line)" "$fx/out/one.html"'
+mkdir -p "$scratch/bz/sections"; printf '# R\n' > "$scratch/bz/R.md"; printf '<p>x</p>\n' > "$scratch/bz/sections/1.html"; printf '<p>x</p>\n' > "$scratch/bz/p.html"
+python3 "$kit/bundle.py" "$scratch/bz/p.html" "$fx/files" "$scratch/bz/out" --readme "$scratch/bz/R.md" >/dev/null
+z1=$(ls "$scratch/bz/out")
+python3 "$kit/bundle.py" "$scratch/bz/p.html" "$fx/files" "$scratch/bz/out" --readme "$scratch/bz/R.md" >/dev/null
+z=$(ls "$scratch/bz/out")
+check "two bundles in one minute leave one zip, the second" '[ "$(wc -l <<<"$z")" -eq 1 ] && [ "$z" != "$z1" ]'
+check "a bundle ships no source when the page has no case folder beside it" '! python3 -c "import sys,zipfile; sys.exit(0 if any(\"source/\" in n for n in zipfile.ZipFile(sys.argv[1]).namelist()) else 1)" "$scratch/bz/out/$z"'
+mkdir -p "$scratch/nc/sections/sub" "$scratch/nc/out"; printf '<p>deep</p>\n' > "$scratch/nc/sections/sub/a.html"
+printf '<p>x</p>\n' > "$scratch/nc/out/c.pdf"; touch -d '2020-01-01' "$scratch/nc/out/c.pdf"; printf '<p>x</p>\n' > "$scratch/nc/out/c.html"
+out=$(python3 "$kit/bundle.py" "$scratch/nc/out/c.html" "$fx/files" "$scratch/nc/out" --readme "$scratch/bz/R.md" 2>&1); status=$?
+check "a PDF older than its page stops the bundle, and no zip is written" '[ "$status" -ne 0 ] && grep -q "older than" <<<"$out" && ! ls "$scratch/nc/out"/*.zip 2>/dev/null'
+rm "$scratch/nc/out/c.pdf"; python3 "$kit/bundle.py" "$scratch/nc/out/c.html" "$fx/files" "$scratch/nc/out" --readme "$scratch/bz/R.md" >/dev/null
+check "a section in a subfolder ships in the source" 'unzip -l "$scratch/nc/out"/c-*.zip | grep -q "c/source/sections/sub/a.html"'
+python3 -c 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],"w",zipfile.ZIP_DEFLATED); w=z.open("big.md","w",force_zip64=True); w.write(b"~/x\n"); [w.write(bytes(1<<20)) for _ in range(65)]; w.close(); z.close()' "$scratch/big.zip"
+out=$(caught "$scratch/big.zip"); status=$?
+check "a zip member over the check limit is refused, unread" '[ "$status" -ne 0 ] && grep -q "big.md: over" <<<"$out" && ! grep -q "big.md: line" <<<"$out"'
+python3 - "$scratch/dir.zip" "$scratch/bad.pdf" <<'PY'
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("case/", "")
+    z.writestr("case/README.md", "# Fine\n")
+PY
+check "a zip with a folder entry and clean files checks clean" 'caught "$scratch/dir.zip" >/dev/null'
+python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"case/case.pdf")' "$scratch/badpdf.zip" "$scratch/bad.pdf"
+out=$(caught "$scratch/badpdf.zip"); status=$?
+check "a zip whose PDF pdftotext can't read is refused" '[ "$status" -ne 0 ] && grep -q "could not read" <<<"$out"'
+tpl three '<!-- KIND research -->\n<h2 id="answer">Given</h2>\n<h2>Answer</h2>\n<h2>Answer</h2>\n<table><tr><th>A</th><th>B</th><th>C</th></tr><tr><td>1</td><td>2</td><td>3</td></tr></table>\n<!-- CLAIM stock | 2026-11-18T20:40+00:00 | run 1 | It glowed -->\n'
+build "$fx/three.html" "$fx/out/three.html" --formats html,md >/dev/null; p=$(cat "$fx/out/three.html" 2>/dev/null)
+check "a name a given id holds, then twice more, gets the next free numbers" 'grep -q "<h2 id=\"answer-2\">Answer" <<<"$p" && grep -q "<h2 id=\"answer-3\">Answer" <<<"$p"'
+check "the timeline heading has an id the contents list links" 'grep -q "<h2 id=\"timeline\">Timeline" <<<"$p" && grep -q "href=\"#timeline\"" <<<"$p"'
+check "a second Markdown table gets its own header rule" 'grep -B1 -x "| A | B | C |" "$fx/out/three.md" | head -1 | grep -qx "" && grep -A1 -x "| A | B | C |" "$fx/out/three.md" | grep -qx "| --- | --- | --- |"'
+build "$fx/pdf.html" "$fx/out/pdfok.html" --formats pdf >/dev/null
+python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"case/case.pdf")' "$scratch/goodpdf.zip" "$fx/out/pdfok.pdf"
+check "a zip whose PDF is clean checks clean" '[ -s "$fx/out/pdfok.pdf" ] && caught "$scratch/goodpdf.zip" >/dev/null'
+tpl noim '<!-- KIND research -->\n<!-- IMG files/dusk.png | Dusk -->\n'
+out=$(PATH="$scratch/bin" "$scratch/bin/python3" "$kit/build.py" "$fx/noim.html" "$fx/out/noim.html" 2>&1); status=$?
+check "an image with no ImageMagick on PATH stops the build, naming convert" '[ "$status" -ne 0 ] && grep -q "convert on PATH" <<<"$out" && ! grep -q Traceback <<<"$out"'
 exit $fail
