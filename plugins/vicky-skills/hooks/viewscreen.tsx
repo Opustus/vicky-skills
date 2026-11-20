@@ -216,6 +216,7 @@ export const register: Register = on => {
     live.cwd = e.cwd
     await previewStarted($, e.cwd)
     await locate($, live.cwd)
+    await readSummit($, live.cwd)
     await publish($, live)
 
     return result
@@ -226,6 +227,8 @@ export const register: Register = on => {
       return next(e)
     }
 
+    // The session-start count may land after the band first drew.
+    if ((await read($, summit)) === '') await readSummit($, live.cwd)
     live.turnStartMs = await $.clock.now()
     live.turnActions = 0
     live.isFirstRequest = true
@@ -638,6 +641,20 @@ async function placeOf($: EngineInterface, cwd: string | undefined): Promise<str
     return gitDir === commonDir ? `${shown} · main checkout` : `worktree: ${shown}`
   } catch {
     return ''
+  }
+}
+
+/** Sets the band's summit from the line summit.sh keeps in the repo's common git folder. */
+async function readSummit($: EngineInterface, cwd: string | undefined): Promise<void> {
+  if (typeof cwd !== 'string' || cwd === '') return
+  try {
+    const dirs = await $.process.run(['git', '-C', cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { timeoutMs: 3000 })
+    const common = dirs.exitCode === 0 ? dirs.stdout.split('\n')[0].trim() : ''
+    if (common === '') return
+    const kept = String(await $.fs.read(`${common}/summit-line`)).trim()
+    if (kept !== '') await update($, summit, () => kept)
+  } catch {
+    // No line kept: the band shows no summit.
   }
 }
 
