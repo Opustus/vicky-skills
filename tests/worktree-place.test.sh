@@ -2,6 +2,8 @@
 # worktree-place's decisions beyond its approved examples: every way a
 # command names its repo and its path, the ignore line, and every merge that
 # must leave a worktree alone.
+# shellcheck disable=SC2034 # exclude and said are read inside the yes checks' eval strings
+# shellcheck disable=SC2016 # each case is a command the hook reads, so $ stays literal
 set -u
 hook="$(cd "$(dirname "$0")/.." && pwd)/plugins/vicky-skills/scripts/worktree-place.sh"
 scratch=$(mktemp -d)
@@ -41,6 +43,16 @@ expect "a variable set to a path outside is refused" 2 'W=../out && git worktree
 HOME="$scratch" expect "a path under ~ inside the folder passes" 0 "git worktree add ~/repo/.claude/worktrees/tilde"
 expect "an add with no path is left to git" 0 "git worktree add --detach"
 expect "an absolute path inside .claude/worktrees passes" 0 "git worktree add $repo/.claude/worktrees/abs"
+expect "a single-quoted path inside .claude/worktrees passes" 0 "git worktree add -b sq '$repo/.claude/worktrees/sq' HEAD"
+expect "a double-quoted path inside .claude/worktrees passes" 0 "git worktree add \"$repo/.claude/worktrees/dq\" HEAD"
+expect "a quoted path outside is refused" 2 "git worktree add '../out'"
+expect "a quoted path outside holding a ; is refused" 2 "git worktree add '../out;x' HEAD"
+expect "a quoted path outside holding a | is refused" 2 "git worktree add -b b '../o|ut' HEAD"
+expect "a quoted path inside holding a ; passes" 0 "git worktree add '$repo/.claude/worktrees/a;b' HEAD"
+expect "an unbalanced quote falls back to plain words" 2 'git worktree add "../out'
+expect "a quoted path inside holding a newline passes" 0 "git worktree add '$repo/.claude/worktrees/x
+y' HEAD"
+yes "the steer names a quoted path's folder as written" 'expect x 2 "git worktree add '"'"'../my out'"'"'" >/dev/null; grep -qF ".claude/worktrees/my out " "$scratch/said"'
 expect "a path that climbs out of .claude/worktrees is refused" 2 "git worktree add .claude/worktrees/../../out"
 expect "the folder itself is no worktree's place" 2 "git worktree add .claude/worktrees"
 expect "git -C names the repo, and the path is read from there" 0 "git -C $repo worktree add .claude/worktrees/viaC" "$scratch"
@@ -50,7 +62,7 @@ expect "a later segment is checked too" 2 "echo hi; git worktree add ../out"
 expect "worktree list passes" 0 "git worktree list"
 expect "a command with no git passes" 0 "ls ../out"
 expect "outside a repository nothing is checked" 0 "git worktree add ../out" "$scratch"
-CLAUDE_PLUGIN_OPTION_GUARD_WORKTREE_PLACE= expect "the option off passes" 0 "git worktree add ../out"
+CLAUDE_PLUGIN_OPTION_GUARD_WORKTREE_PLACE='' expect "the option off passes" 0 "git worktree add ../out"
 CLAUDE_PLUGIN_OPTION_GUARD_WORKTREE_PLACE=false expect "the option at false passes" 0 "git worktree add ../out"
 CLAUDE_PLUGIN_OPTION_GUARD_WORKTREE_PLACE=1 expect "the option at 1 refuses" 2 "git worktree add ../out"
 expect "after the command, an add is not judged again" 0 "git worktree add ../out" "" PostToolUse

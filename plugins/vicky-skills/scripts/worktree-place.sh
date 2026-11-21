@@ -20,7 +20,9 @@
 # with the worktree's path for a landed branch. git worktree remove leaves
 # untracked files behind, and files a container owns. A script that fails
 # leaves the worktree and branch, and the agent is told its output.
+# shellcheck disable=SC1091,SC2154 # git-hook-lib.sh, sourced below, sets payload, command and code
 GUARD=worktree-place
+# shellcheck disable=SC2034 # read by git-hook-lib.sh
 OPTION=${CLAUDE_PLUGIN_OPTION_GUARD_WORKTREE_PLACE:-}
 # shellcheck source=git-hook-lib.sh
 . "$(dirname "$0")/git-hook-lib.sh"
@@ -47,7 +49,14 @@ worktree_of() {
 }
 
 check_add() {
-  local words=($1) i=0 path="" name="" abs
+  local words i=0 path="" name="" abs parsed
+  # Read the words as the shell will, so a quoted path keeps its text. Quotes
+  # that never close fall back to plain word splitting.
+  if parsed=$(xargs -n1 printf '%s\n' <<<"$1" 2>/dev/null); then
+    mapfile -t words <<<"$parsed"
+  else
+    read -ra words <<<"$1"
+  fi
   while ((i < ${#words[@]})) && [ "${words[i]}" != add ]; do i=$((i + 1)); done
   for ((i = i + 1; i < ${#words[@]}; i++)); do
     case "${words[i]}" in
@@ -74,6 +83,7 @@ check_add() {
 }
 
 check_merge() {
+  # shellcheck disable=SC2206 # the merge's own words, split as the shell will
   local words=(${1#*merge}) i branch wt left dirty drop out how
   drop=$(drop_script "$main")
   [ -e "$(git rev-parse --git-dir)/MERGE_HEAD" ] && return 0
@@ -116,11 +126,24 @@ Land them, then remove the worktree with $how."
   done
 }
 
+add_re='(^|[[:space:]])git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+worktree[[:space:]]+add([[:space:]]|$)'
 while IFS= read -r segment; do
   if [ "$event" = PostToolUse ]; then
     grep -Eq '(^|[[:space:]])git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+merge([[:space:]]|$)' <<<"$segment" && check_merge "$segment"
   else
-    grep -Eq '(^|[[:space:]])git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+worktree[[:space:]]+add([[:space:]]|$)' <<<"$segment" && check_add "$segment"
+    grep -Eq "$add_re" <<<"$segment" && adds=1
   fi
 done < <(tr ';&|\n' '\n' <<<"$code")
+# The code above has its quoted text cut out, so each add's path is read from
+# the command as written. quote-mask.awk hides a quoted ; & | or newline, so a
+# quoted path is never cut in two; it exits 1 on a quote that never closes, and
+# the command is then split as it stands.
+if [ -n "${adds:-}" ]; then
+  masked=$(awk -f "$(dirname "$0")/quote-mask.awk" <<<"$command") || masked=$command
+  while IFS= read -r segment; do
+    # A quoted newline stays masked, so the path stays one word.
+    segment=$(tr '\001\002\003\004' ' ;&|' <<<"$segment")
+    grep -Eq "$add_re" <<<"$(sed -E "s/'[^']*'/q/g; s/\"[^\"]*\"/q/g" <<<"$segment")" && check_add "$segment"
+  done < <(tr ';&|\n' '\n' <<<"$masked")
+fi
 exit 0 # mutant-ok delete: the loop above leaves status 0
