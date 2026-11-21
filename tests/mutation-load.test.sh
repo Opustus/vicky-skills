@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # alive is read inside check()'s eval
 # Regression tests beside mutation_load_approved_examples: these held before
 # the CPU limit too, so they carry no approved-spec mark.
 set -u
@@ -35,7 +37,7 @@ kill "${busy[@]}" 2>/dev/null; wait "${busy[@]}" 2>/dev/null
 check "ML2 a looping mutant dies with every core busy" 'grep -qE "^script $probe: ([0-9]+)/\1$" <<<"$out" && ! grep -q "^hung " <<<"$out"'
 slow=3
 # ML4: a test that fails late, slow seconds past its usual time, kills its mutant through its result.
-setup ml4 "[ \"\$x\" = 1 ] || { sleep $slow; exit 1; } # mutant-ok delete: the line only fails" "[ \$n -gt 1 ] && sleep $slow; bash \"\$hook\""
+setup ml4 "[ \"\$x\" = 1 ] || { sleep $slow; exit 1; } # mutant-ok delete: the line only fails" "[ \$n -gt 1 ] && sleep $slow; bash \"\$hook\" || { echo 'FAIL the probe failed'; exit 1; }"
 out=$(pass)
 check "ML4 a slow test is judged by its result" 'grep -qE "^script $probe: [1-9][0-9]*/" <<<"$out" && ! grep -q "^hung " <<<"$out"'
 exit $fail
