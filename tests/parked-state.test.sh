@@ -58,6 +58,24 @@ check "a status line in a comment, indented, is not the ticket's state" "open: -
 check "a line with no ref says so" "no ref: - Chart the rewrite" "$out"
 check "an open ticket with no pull request is open" "open: - Tidy ABC-2 alone [ABC-2 open]" "$out"
 check "a ref named twice is read once" "open: - Land !11, then !11 again [!11 open]" "$out"
+# A repo whose git config names a stub file reads pull request states from it,
+# so an eval with no forge can still show a merged pull request. No gh or tea runs.
+mkdir -p "$dir/noforge"; printf '#!/usr/bin/env bash\nexit 1\n' > "$dir/noforge/tea"; cp "$dir/noforge/tea" "$dir/noforge/gh"; chmod +x "$dir/noforge/"*
+s=$(repo stubbed https://forge.example.invalid/o/r.git)
+printf '7 merged\n8 open\n' > "$s/forge-stub"
+git -C "$s" config parked-state.stub forge-stub
+printf -- '- Port it (ABC-2, !7)\n- Keep going (!8)\n- Unknown (!9)\n' > "$s/.todo"
+out=$(cd "$s" && PATH="$dir/noforge:$PATH" bash "$script" 2>&1)
+check "a stubbed merged pull request with its ticket open is merged-ticket-open" "merged-ticket-open: - Port it (ABC-2, !7) [!7 merged, ABC-2 open]" "$out"
+check "a stubbed open pull request keeps its line open" "open: - Keep going (!8) [!8 open]" "$out"
+check "a pull request the stub does not list is unread" "unread: - Unknown (!9) [!9 unread]" "$out"
+git -C "$s" config parked-state.stub missing-file
+out=$(cd "$s" && PATH="$dir/noforge:$PATH" bash "$script" 2>&1)
+check "a stub file that is missing reads unread" "unread: - Keep going (!8) [!8 unread]" "$out"
+printf '7 merged\r\n8 open\r\n' > "$s/forge-stub"
+git -C "$s" config parked-state.stub forge-stub
+crlf=$(cd "$s" && PATH="$dir/noforge:$PATH" bash "$script" 2>&1)
+check "a stub written with CRLF lines still reads merged" "merged-ticket-open: - Port it (ABC-2, !7) [!7 merged, ABC-2 open]" "$crlf"
 if grep -qE 'springboard|N1|Handoff' <<<"$out"; then echo "FAIL springboard and Handoff lines are skipped: $out"; fail=1; else echo "ok   springboard and Handoff lines are skipped"; fi
 rm "$dir/pr-10"
 check "a pull request it cannot read keeps the line" "unread: - Ship it after !10 (ABC-1) [!10 unread, ABC-1 done]" "$(run "$r")"
@@ -66,7 +84,7 @@ echo '- Land PR 7 (ABC-1)' > "$g/.todo"; echo MERGED > "$dir/gh-7"
 check "on GitHub gh reads the pull request" "done: - Land PR 7 (ABC-1) [!7 merged, ABC-1 done]" "$(run "$g")"
 n=$(repo none git@forge.example:o/n.git)
 out=$(run "$n"); code=$?
-[ -z "$out" ] && [ "$code" = 0 ] && echo "ok   no .todo prints nothing and exits 0" || { echo "FAIL no .todo prints nothing and exits 0: $code $out"; fail=1; }
+if [ -z "$out" ] && [ "$code" = 0 ]; then echo "ok   no .todo prints nothing and exits 0"; else echo "FAIL no .todo prints nothing and exits 0: $code $out"; fail=1; fi
 mkdir -p "$dir/plain"; out=$(run "$dir/plain"); code=$?
-[ -z "$out" ] && [ "$code" = 0 ] && echo "ok   outside a repo it prints nothing and exits 0" || { echo "FAIL outside a repo it prints nothing and exits 0: $code $out"; fail=1; }
+if [ -z "$out" ] && [ "$code" = 0 ]; then echo "ok   outside a repo it prints nothing and exits 0"; else echo "FAIL outside a repo it prints nothing and exits 0: $code $out"; fail=1; fi
 exit $fail
