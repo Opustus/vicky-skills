@@ -46,6 +46,18 @@ echo "# x" >> tests/a.test.sh; git commit -qam touch
 out=$("$lint" prove "$base" 2>&1)
 check "a Laws line names each law by its file and line and a short start, never its whole text" \
   'line=$(grep "^Laws:" <<<"$out") && grep -q "AGENTS.md:1 " <<<"$line" && [ ${#line} -lt 160 ] && grep -q "tests/a.test.sh: passed" <<<"$line"'
+# A short start cut inside a code span or bold run would leave it open and break the body's Markdown.
+printf -- '- **Check it**: run `bash scripts/check.sh <file>` and fix each %s\n  Proven by: tests/a.test.sh\n' "$long" > AGENTS.md; git commit -qam markdown
+echo "# y" >> tests/a.test.sh; git commit -qam touch2
+out=$("$lint" prove "$base" 2>&1); tick=$(printf '\140')
+printf -- '- run build.py <name> now\n  Proven by: tests/a.test.sh\n' > AGENTS.md; git commit -qam tag; echo "# z" >> tests/a.test.sh; git commit -qam touch3
+out2=$("$lint" prove "$base" 2>&1)
+printf -- '- a *lone mark and [a link](http://example.invalid/%s) both\n  Proven by: tests/a.test.sh\n' "$long" > AGENTS.md; git commit -qam marks; echo "# w" >> tests/a.test.sh; git commit -qam touch4
+out3=$("$lint" prove "$base" 2>&1)
+check "a Laws line keeps no lone star or link bracket a cut could leave open" '! grep -qE "[][*]" <<<"$(grep "^Laws:" <<<"$out3")"'
+check "a Laws line keeps no angle bracket a renderer would drop as a tag" 'grep -q "run build.py name now" <<<"$(grep "^Laws:" <<<"$out2")"'
+check "a Laws line keeps no backtick or bold mark from a law's text" \
+  'line=$(grep "^Laws:" <<<"$out") && grep -q "Check it: run bash scripts/check.sh" <<<"$line" && ! grep -qF -e "**" -e "$tick" <<<"$line"'
 
 # approved-spec: the examples the user ticked on 2026-11-18 for "Date each proof".
 cd "$t" && rm -rf r && mkdir r && cd r && git init -q && git config user.email t@t && git config user.name t
