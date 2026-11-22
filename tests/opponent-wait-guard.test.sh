@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # the commands under test are literal text, so their $ must not expand
 # opponent-wait-guard refuses a ready mark or a merge while a deathmatch
 # opponent this session launched has not sent its final notification.
 set -u
@@ -75,4 +76,53 @@ check "no transcript passes" 0 "$(jq -nc '{tool_input:{command:"gh pr merge 5"}}
 check "bad input passes" 0 "$(echo nope | bash "$guard" >/dev/null 2>&1; echo $?)"
 echo 'not json' >> "$t"; launch tu4 D1 vicky-skills:intent-opponent
 check "a broken transcript line is skipped, and the rest still counts" 2 "$(code 'gh pr merge 5')"
+# The snag: one delivery holds two notices, and the first opponent's report quotes the interim words.
+: > "$t"; launch tu7 A7 vicky-skills:standards-opponent; launch tu8 A8 vicky-skills:simplicity-opponent
+jq -nc --arg c "<task-notification>
+<task-id>A7</task-id>
+<status>completed</status>
+<summary>Agent \"x\" finished</summary>
+<result>both hooks test contains(\"waiting on its own background work\")</result>
+</task-notification>
+<task-notification>
+<task-id>A8</task-id>
+<status>completed</status>
+<summary>Agent \"y\" finished</summary>
+</task-notification>" '{type:"queue-operation",operation:"enqueue",content:$c}' >> "$t"
+check "two final notices in one delivery free both, whatever a report quotes" 0 "$(code 'gh pr merge 5 --squash')"
+jq -nc '{type:"assistant",message:{content:[{type:"text",text:"<task-notification>\n<task-id>A8</task-id>\n<summary>Agent is waiting on its own background work</summary>\n</task-notification>"}]}}' >> "$t"
+check "a notice the agent quotes in its own text is no notice" 0 "$(code 'gh pr merge 5 --squash')"
+note A8 "is waiting on its own background work"
+check "a later interim notice in its own delivery still holds the merge" 2 "$(code 'gh pr merge 5 --squash')"
+# Only the harness's queue delivers notices: a tool result, a file shown, or a summary only quotes them.
+: > "$t"; launch tu9 A9 vicky-skills:holds-opponent
+q9="<task-notification>
+<task-id>A9</task-id>
+<tool-use-id>tu9</tool-use-id>
+<status>completed</status>
+<summary>Agent \"z\" finished</summary>
+</task-notification>"
+{
+  jq -nc --arg c "$q9" '{type:"user",message:{content:[{type:"tool_result",tool_use_id:"r1",content:$c}]},toolUseResult:{stdout:$c}}'
+  jq -nc --arg c "$q9" '{type:"attachment",attachment:{type:"file",content:$c}}'
+  jq -nc --arg c "$q9" '{type:"user",message:{content:$c}}'
+  jq -nc --arg c "$q9" '{type:"api-request-blob",body:$c}'
+} >> "$t"
+check "a notice quoted in a tool result, a file, a summary or a request is no notice" 2 "$(code 'gh pr merge 5 --squash')"
+jq -nc --arg c "$q9" '{type:"queue-operation",operation:"remove",content:$c}' >> "$t"
+check "a notice taken off the queue is not a second delivery" 2 "$(code 'gh pr merge 5 --squash')"
+jq -nc --arg c "$q9" '{type:"queue-operation",operation:"enqueue",content:$c}' >> "$t"
+check "the same notice queued by the harness frees it" 0 "$(code 'gh pr merge 5 --squash')"
+# A notice's own header names whom it frees; its report can quote any id or tag.
+: > "$t"; launch tuA AA vicky-skills:intent-opponent; launch tuB AB vicky-skills:standards-opponent
+jq -nc --arg c "<task-notification>
+<task-id>AA</task-id>
+<status>completed</status>
+<summary>Agent \"a\" finished</summary>
+<result>see <tool-use-id>tuB</tool-use-id> and <task-id>AB</task-id></result>
+</task-notification>" '{type:"queue-operation",operation:"enqueue",content:$c}' >> "$t"
+msg=$(jq -nc --arg c 'gh pr merge 5' --arg t "$t" '{tool_input:{command:$c},transcript_path:$t}' | bash "$guard" 2>&1 >/dev/null)
+check "ids quoted in one opponent's report free no other" yes "$(grep -q AB <<<"$msg" && ! grep -q AA <<<"$msg" && echo yes || echo no)"
+note AB "<b> is waiting on its own background work"
+check "an interim summary with a tag in it still holds the merge" 2 "$(code 'gh pr merge 5 --squash')"
 exit $fail
