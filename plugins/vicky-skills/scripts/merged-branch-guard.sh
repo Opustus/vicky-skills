@@ -8,9 +8,10 @@
 # the newest commit whose tree the default branch holds, and the heads of the
 # user's open pull requests there.
 #
-# SessionStart hook, and the first other command in each checkout per session:
-# tells the agent the same, without refusing, so a session that only reads and
-# edits on a merged branch hears it before its first commit. A branch that was
+# SessionStart hook, and any other command in a checkout once 10 minutes have
+# passed since its last check there: tells the agent the same, once per checkout
+# per session, without refusing, so a session that only reads and edits on a
+# merged branch hears it before its first commit, even when it merges mid-session. A branch that was
 # never pushed is not checked. On unless the plugin option guard_merged_branch
 # is false or 0.
 GUARD=merged-branch-guard
@@ -18,7 +19,10 @@ OPTION=${CLAUDE_PLUGIN_OPTION_GUARD_MERGED_BRANCH:-true}
 case "$OPTION" in true|1) ;; *) exit 0 ;; esac
 payload=$(cat)
 event=$(jq -r '.hook_event_name // ""' <<<"$payload" 2>/dev/null)
-commit_re='(^|[^[:alnum:]_-])git[[:space:]]([^;&|]*[[:space:]])?(commit|push)([[:space:]]|$)'
+# shellcheck source=git-subcommand.sh
+. "$(dirname "$0")/git-subcommand.sh"
+# commits_or_pushes <text>: 0 when a git command in <text> is a commit or push.
+commits_or_pushes() { git_subcommands "$1" | grep -qxE 'commit|push'; }
 
 # gone: 0 when the branch $current has an upstream and that remote branch is gone.
 # Leaves remote and reach (0 live, 2 gone, else origin could not answer).
@@ -81,7 +85,7 @@ heads_line() {
 # refused. The lib takes a git command in the session's folder in its place, so
 # it stands in that repository and stays quiet outside one.
 hint=0
-if [ "$event" = SessionStart ] || { [ "$event" = PreToolUse ] && ! grep -Eq "$commit_re" <<<"$(jq -r '.tool_input.command // ""' <<<"$payload")"; }; then
+if [ "$event" = SessionStart ] || { [ "$event" = PreToolUse ] && ! commits_or_pushes "$(jq -r '.tool_input.command // ""' <<<"$payload")"; }; then
   hint=1
   # tr also turns jq's closing newline into _, so no id can name . or ..
   session=$(jq -r '.session_id // "none"' <<<"$payload" | tr -c '[:alnum:]_.-' _)
@@ -93,16 +97,23 @@ fi
 . "$(dirname "$0")/git-hook-lib.sh" <<<"$payload"
 
 if [ "$hint" = 1 ]; then
-  # Once per checkout per session: a session told at its start hears nothing more.
+  # Told once per checkout per session. Until then, $key's time is the last
+  # check, and a later command checks again once 10 minutes have passed, so a
+  # branch that merges mid-session is told too.
   told="${CLAUDE_PLUGIN_DATA:-${TMPDIR:-/tmp}}/merged-branch-told/$session"
   key=$(git rev-parse --show-toplevel | cksum | cut -d' ' -f1)
-  mkdir -p "$told" 2>/dev/null && [ ! -e "$told/$key" ] && touch "$told/$key" 2>/dev/null || exit 0
+  mkdir -p "$told" 2>/dev/null && [ ! -e "$told/$key.told" ] || exit 0
+  [ -n "$(find "$told/$key" -mmin -10 2>/dev/null)" ] && exit 0
+  touch "$told/$key" 2>/dev/null || exit 0 # mutant-ok: touch fails only in a folder mkdir -p just made, and either exit lets the command run silently
   gone || exit 0
+  touch "$told/$key.told"
   move
   jq -nc --arg e "$event" --arg h "$GUARD: this checkout stands on '$current', and its remote branch is gone: its pull request merged, or the branch was deleted, so the branch is finished. $(heads_line) Or start fresh: git fetch --prune && git switch -c <new-branch> $default_ref. $moving" \
     '{hookSpecificOutput:{hookEventName:$e,additionalContext:$h}}'
 else
-  grep -Eq "$commit_re" <<<"$code" || exit 0
+  # The raw command, not $code: $code drops a quoted option value, so the
+  # reader would take the subcommand for it. Heredoc bodies stay out.
+  commits_or_pushes "$(awk -f "$(dirname "$0")/heredoc-strip.awk" <<<"$command")" || exit 0
   grep -Eq -- 'push[^;&|]*(--delete|[[:space:]]-d([[:space:]]|$))' <<<"$code" && exit 0
   gone || exit 0
   move
