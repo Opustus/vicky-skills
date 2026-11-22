@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # page.py's decisions beyond the approved examples: comments, odd answers,
 # a second Done, the timeout and bad arguments. Runs the page with a
 # stand-in browser that records its address.
@@ -488,18 +490,18 @@ check "a live drawing change is kept at once in its own block, answers Kept. onc
 printf '# Sketch\n\n```drawio\n<mxfile>a</mxfile>```\n\n## Two\n\n```drawio\n<mxfile>b</mxfile>\n```\n' >"$scratch/gl.md"
 cp "$scratch/gl.md" "$scratch/gl2.md"
 fixed_text=$(printf '# Sketch\n\n```drawio\n<mxfile>a</mxfile>\n```\n\n## Two\n\n```drawio\n<mxfile>b</mxfile>\n```\n')
-DRAWIO_HOME= start "$scratch/gl.md"
+DRAWIO_HOME="" start "$scratch/gl.md"
 html=$(curl -s "$url")
 post /done "drawing_xml.0=<mxfile>a</mxfile>" "drawing_xml.1=<mxfile>b</mxfile>" >/dev/null
 finish
-DRAWIO_HOME= start "$scratch/gl2.md" 1
+DRAWIO_HOME="" start "$scratch/gl2.md" 1
 finish
 check "a glued fence is split in the file, even with no answer, and the page shows each sketch on its own" \
   '[ "$(grep -c "name=\"drawing_xml\." <<<"$html")" = 2 ] && [ "$(cat "$scratch/gl.md")" = "$fixed_text" ] && [ "$status" = 2 ] && [ "$(cat "$scratch/gl2.md")" = "$fixed_text" ]'
 
 # A drawing's picture is saved beside the file and named after its closing fence.
 printf '```drawio\n<a/>\n```\n\n```text\nt\n```\n' >"$scratch/png.md"
-DRAWIO_HOME= start "$scratch/png.md"
+DRAWIO_HOME="" start "$scratch/png.md"
 post /done drawing_xml.0='<a/>' drawing_png.0='data:image/png;base64,aGk=' text.0=t comment.0= >/dev/null
 finish
 check "a drawing's PNG is saved as <file>.drawing-<n>.png and named once, after its closing fence" \
@@ -544,4 +546,16 @@ except OSError:
     print("silent after Done", got)
 PY
 check "after Done the page serves nothing more" '[ "$(timeout 30 python3 -I "$scratch/late.py" "$dir" 2>/dev/null)" = "silent after Done True" ]'
+# EVAL_PAGE_DISPLAY=1 opens the page with no display, so an eval can read its link; unset, the editor opens.
+printf '# Drafts\n\n## Tip\n\ntext\n' > "$scratch/evalpage.md"
+# The page waits for Done, so stop it once its link is out.
+timeout 15 env -u DISPLAY -u WAYLAND_DISPLAY -u BROWSER EVAL_PAGE_DISPLAY=1 bash "$dir/open-page.sh" "$scratch/evalpage.md" > "$scratch/evalpage.on" 2>&1 &
+onpid=$!
+for _ in $(seq 50); do grep -q "page: open" "$scratch/evalpage.on" && break; sleep 0.2; done
+kill "$onpid" 2>/dev/null; wait "$onpid" 2>/dev/null
+timeout 15 env -u DISPLAY -u WAYLAND_DISPLAY -u EVAL_PAGE_DISPLAY VISUAL=true bash "$dir/open-page.sh" "$scratch/evalpage.md" > "$scratch/evalpage.off" 2>&1
+timeout 15 env -u DISPLAY -u WAYLAND_DISPLAY EVAL_PAGE_DISPLAY=0 VISUAL=true bash "$dir/open-page.sh" "$scratch/evalpage.md" > "$scratch/evalpage.zero" 2>&1
+check "EVAL_PAGE_DISPLAY=0 opens the editor, not the page" 'grep -q "draft: wait with watch.sh" "$scratch/evalpage.zero" && ! grep -q "page: open" "$scratch/evalpage.zero"'
+check "EVAL_PAGE_DISPLAY=1 prints the page link" 'grep -q "page: open http://127.0.0.1:" "$scratch/evalpage.on"'
+check "without EVAL_PAGE_DISPLAY the editor opens, not the page" 'grep -q "draft: wait with watch.sh" "$scratch/evalpage.off" && ! grep -q "page: open" "$scratch/evalpage.off"'
 exit $fail
