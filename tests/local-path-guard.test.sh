@@ -53,6 +53,12 @@ g rm -q pathfile
 expect 0 "removing a path is fine" 'git commit -m "drop it"'
 g reset -q --hard
 
+# Built in two parts, so no added line holds a home path (prefight's leak check).
+fake="/ho""me/someone/x"
+printf 'clean\n' >"$repo/tracked"; g add tracked; g commit -q -m tracked
+printf 'see %s\n' "$fake" >>"$repo/tracked"
+expect 2 "a path in a tracked change the same command adds" 'git add -u && git commit -m add'
+g reset -q --hard
 printf 'see /home/someone/x\n' >"$repo/fresh"
 expect 2 "path in a file the same command adds" 'git add -A && git commit -m add'
 expect 0 "nothing staged passes" 'git status && git commit -m "nothing staged"'
@@ -64,4 +70,39 @@ rm "$repo/fresh"
 printf 'bin\0 /home/someone/x\n' >"$repo/blob" # local-path-ok
 expect 0 "a binary untracked file is not scanned" 'git add -A && git commit -m add'
 rm "$repo/blob"
+
+# A repo with thousands of untracked files (a workbench's renders) finishes
+# well inside the hook's timeout. The old scan built one string from every
+# file and passed 120 s on 6,315 of them.
+mkdir "$repo/many"
+for i in $(seq 3000); do printf 'line %s\n' "$i" >"$repo/many/f$i.txt"; done
+start=$SECONDS
+expect 0 "thousands of clean untracked files pass" 'git add -A && git commit -m add'
+took=$((SECONDS - start))
+if [ "$took" -le 5 ]; then echo "ok   thousands of untracked files scan in ${took}s"
+else echo "FAIL thousands of untracked files took ${took}s, over 5"; fail=1; fi
+printf 'see %s\n' "$fake" >"$repo/many/f1500.txt"
+expect 2 "a path in one of thousands of untracked files is refused" 'git add -A && git commit -m add'
+rm -r "$repo/many"
+
+printf 'see %s\n' "$fake" >"$repo/local-path-ok.txt"
+expect 2 "a file named for the marker is still scanned" 'git add -A && git commit -m add'
+rm "$repo/local-path-ok.txt"
+printf 'see %s\n' "$fake" >"$repo/x:1:local-path-ok.txt"
+expect 2 "a file whose name looks like a marked hit is still scanned" 'git add -A && git commit -m add'
+rm "$repo/x:1:local-path-ok.txt"
+odd=$'a\001local-path-ok'; printf 'see %s\n' "$fake" >"$repo/$odd"
+expect 2 "a file name with a control byte and the marker is still scanned" 'git add -A && git commit -m add'
+rm "$repo/$odd"
+mkdir -p "$repo/sub"; printf 'see %s\n' "$fake" >"$repo/rootfile.txt"
+top=$repo; repo=$top/sub
+expect 2 "an untracked file above the command's folder is scanned" 'git add -A && git commit -m add'
+repo=$top; rm -r "$repo/rootfile.txt" "$repo/sub"
+printf 'fixture %s # local-path-ok\n' "$fake" >"$repo/marked.txt"
+expect 0 "a marked line in an untracked file passes" 'git add -A && git commit -m add'
+rm "$repo/marked.txt"
+printf 'ignored.txt\n' >"$repo/.gitignore"
+printf 'see %s\n' "$fake" >"$repo/ignored.txt"
+expect 0 "an ignored file is not scanned" 'git add -A && git commit -m add'
+rm "$repo/ignored.txt" "$repo/.gitignore"
 exit $fail

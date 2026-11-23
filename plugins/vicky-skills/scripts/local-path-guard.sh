@@ -21,17 +21,15 @@ done
 
 # What the commit would add: staged lines, plus tracked changes and untracked
 # files when the command stages them itself (`git add`, `commit -a`).
+untracked=no
 if grep -Eq 'git[[:space:]].*add([[:space:]]|$)|commit[^;&|]*[[:space:]]-[a-zA-Z]*a' <<<"$code"; then
   added=$({ git diff HEAD 2>/dev/null || git diff --cached 2>/dev/null || true; } | grep -E '^\+' | grep -Ev '^\+\+\+ ' || true)
-  while IFS= read -r untracked; do
-    grep -Iq . "$untracked" || continue
-    added="$added
-$(head -c 1000000 "$untracked")"
-  done < <(git ls-files --others --exclude-standard)
+  untracked=yes
 else
   added=$({ git diff --cached 2>/dev/null || true; } | grep -E '^\+' | grep -Ev '^\+\+\+ ' || true)
 fi
 
+# shellcheck disable=SC2001 # one sed escapes every regex character; ${var//} takes one at a time
 esc() { sed 's/[][\.*^$+?(){}|]/\\&/g' <<<"$1"; }
 user=${USER:-$(id -un 2>/dev/null || true)}
 # A /home/ or /Users/ that follows a variable or a folder name is inside that
@@ -45,6 +43,16 @@ if [ -n "$user" ]; then
 fi
 # A line marked local-path-ok holds a path on purpose, such as a test fixture.
 hits=$(grep -n -E -- "$pattern" <<<"$added" | grep -v 'local-path-ok' | cut -c1-160 | head -5 || true)
+if [ -z "$hits" ] && [ "$untracked" = yes ]; then
+  # One grep over every untracked text file, never a loop: a workbench holds
+  # thousands, and a loop that read each into a string ran past the timeout.
+  # -I skips binary files. The marker is read in the line, never the file name.
+  # The line text is the last field: a name can hold \001 but never a NUL.
+  # It runs from the repo's top, since `git add -A` stages the whole tree.
+  hits=$(cd "$(git rev-parse --show-toplevel)" && git ls-files -z --others --exclude-standard |
+    xargs -0 -r grep -I -H -n -Z -E -- "$pattern" 2>/dev/null | tr '\0' '\001' |
+    awk -F '\001' '{ t = $NF; sub(/^[0-9]+:/, "", t) } t !~ /local-path-ok/' | tr '\001' ':' | cut -c1-160 | head -5 || true)
+fi
 [ -n "$hits" ] || exit 0
 refuse "local-path-guard: this commit adds a path into this machine:" \
   "$hits" \
