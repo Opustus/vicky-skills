@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # user-test-guard sends back a reply, and refuses a SendUserMessage, that hands
 # the user a test in chat, unless the turn opened an over-to-you checklist.
+# shellcheck disable=SC2016,SC2181,SC2329 # each check is a string check() evals, so its functions and its \$ signs look unused
 set -u
 export VISUAL=false EDITOR=false
 # The opener names below are fixture text in a transcript; no page opens.
@@ -97,6 +98,52 @@ check "a SendUserMessage after an old closed checklist is refused" 'refused "Let
 rm -f "$marker"
 { user "go"; bash_call "bash skills/writing/interactive-page/scripts/$page_opener.sh /tmp/s1/over-to-you-door.md"; text "Let me know if it works."; } > "$fx/t.jsonl"
 check "a command that only names the opener, with no marker, is sent back" 'sent_back'
+
+# The door line is the reply's one ask. Door lines seen in real sessions, retold.
+door_red=("🚪 Waiting on you: open Appearance in character creation and look at Chest. Tile 5 should show the preview."
+          "🚪 Waiting on you: connect to \`localhost:5121\`, open Appearance, and look at Chest tile 5."
+          "🚪 Waiting on you: close the dressing window and open it again with \`/dressing\`. Then look at Torso."
+          "🚪 Waiting on you: reopen \`/dressing\`. Paging back to page 1 should work now."
+          "🚪 Waiting on you: load \`the_field\` from the modules list and walk the field."
+          "🚪 **Waiting on you:** the test module is ready to look at. It holds all 79 animals."
+          "🚪 **Waiting on you:** reopen \`the_field\`. It now holds 103 animals."
+          "🚪 Waiting on you: say go, then open the window and look at tile 5."
+          "🚪 Waiting on you: I reopened it. Please look at tile 5."
+          "🚪 Waiting on you: open it in your browser and look at it."
+          "🚪 Open the window.")
+for d in "${door_red[@]}"; do
+  { user "go"; text "$d"; } > "$fx/t.jsonl"
+  check "a door line that sends the user to look is sent back: $d" 'sent_back'
+done
+check "a door line sent with SendUserMessage is refused" 'refused "🚪 Waiting on you: reopen the window and look at the tile."'
+{ user "go"; text "🚪 Waiting on you: reopen the window. It should page back now."; } > "$fx/t.jsonl"
+check "the reason quotes the door line's order" '[[ "$(rm -rf "$fx/data"; stop)" == *"reopen the window"* ]]'
+door_green=("🚪 Waiting on you: Go renderer or Blender? Answer one word in chat."
+            "🚪 Waiting on you: type \`! make up\` from the repo root."
+            "🚪 Waiting on you: say \"open it\" and I open the pull request."
+            "🚪 Waiting on you: say \"go\" when your check is done."
+            "🚪 Waiting on you: is the grey mannequin the right look? Answer in chat."
+            "🚪 Waiting on you: if it is ready for review, run \`! tea pr edit 7 -t x\`."
+            "🚪 Waiting on you: the draft is open in your browser. Close it when it reads right."
+            "🚪 Waiting on you: nothing. Open items: none.")
+for d in "${door_green[@]}"; do
+  { user "go"; text "$d"; } > "$fx/t.jsonl"
+  check "a door line that asks for an answer goes through: $d" 'passes'
+done
+for d in "🚪 Waiting on you: say \"go\" to draft the examples and open the page." \
+         "🚪 Waiting on you: paste this to mark it ready. I'll close and reopen it to start the run." \
+         "🚪 Waiting on you: reopen the ticket as a prototype, yes or no? My pick is yes." \
+         "🚪 Waiting on you: open the drafts page at http://127.0.0.1:1/ and press Done when you're finished." \
+         "🚪 Waiting on you: sitting 2 is open in your editor. Close it and I'll record your verdicts."; do
+  { user "go"; text "$d"; } > "$fx/t.jsonl"
+  check "a door line for an answer, the agent's own step or a page gate goes through: $d" 'passes'
+done
+{ user "go"; text "🚪 Waiting on you: reopen the window and look."; text "🚪 Waiting on you: nothing. I ran each check myself."; } > "$fx/t.jsonl"
+check "a corrected door line later in the turn goes through" 'passes'
+{ user "go"; text "🚪 Waiting on you: say go."; text "🚪 Waiting on you: reopen the window and look."; } > "$fx/t.jsonl"
+check "the last door line is the one read" 'sent_back'
+{ user "go"; text "I had to reopen the file and look at line 5. Fixed and pushed."; } > "$fx/t.jsonl"
+check "the same words outside the door line go through" 'passes'
 
 { user "go"; text "Let me know if it works."; } > "$fx/t.jsonl"
 check "the reason names over-to-you and ran.sh" '[[ "$(rm -rf "$fx/data"; stop)" == *over-to-you*ran.sh* ]]'
