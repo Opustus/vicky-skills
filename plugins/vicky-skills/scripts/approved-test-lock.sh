@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Edit, Write, MultiEdit and Bash; guard_approved_test_lock,
 # on by default): an approved test changes only with its change record. A test
-# is approved when approved-spec.sh says so and the default branch holds it.
-# An Edit or Write that keeps every Given, When and Then comment line of the
-# default branch's copy goes through, as examples' CHANGING.md says. A shell
+# is approved when approved-spec.sh says so, and both the default branch and
+# the branch's fork point hold it. An Edit or Write that keeps every Given,
+# When and Then comment line of the fork point's copy goes through, as examples' CHANGING.md says. A shell
 # command whose words name an approved test as a write target is refused
 # before it runs, and on PostToolUse each approved test a command left without
-# one of its step lines is put back from the default branch. A change record
+# one of its step lines is put back from the fork point. A change record
 # is a file on the branch, not on the default branch, holding the line
 # "<test path>:<line or new>" with "- [x] approve" under it: red-pen's
 # section for the changed example. Hooks fire for each call inside a REPL
@@ -22,6 +22,8 @@ tool=$(get .tool_name); cwd=$(get .cwd)
 cd "${cwd:-.}" 2>/dev/null || exit 0
 root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 base=origin/main; git rev-parse -q --verify "$base" >/dev/null || base=main
+# A test main gained after the branch forked is not the branch's to guard.
+fork=$(git merge-base "$base" HEAD 2>/dev/null) || fork=$base
 steps() { grep -E '^[[:space:]]*#[[:space:]]*(Given|When|Then|And)[[:space:]]' ; }
 record() { # record <repo path>: a ticked change record on the branch
   local f # mutant-ok delete: f only leaks to the caller, which never reads it
@@ -44,19 +46,21 @@ locked() { # locked <absolute path>: prints its repo path when it is locked
   local rel=${1#"$root"/}
   approved "$1" || return 1
   git cat-file -e "$base:$rel" 2>/dev/null || return 1
+  git cat-file -e "$fork:$rel" 2>/dev/null || return 1
   record "$rel" && return 1
   echo "$rel"
 }
 event=$(get .hook_event_name)
 if [ "$tool" = Bash ] && [ "$event" = PostToolUse ]; then
   # After the command: each locked test that lost a step line is put back from the
-  # default branch. This holds for any write a command can make, read or not.
+  # fork point. This holds for any write a command can make, read or not.
   hit=""
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue # mutant-ok delete: an empty name is the repo folder, which is never approved
     p="$root/$rel"
-    if [ ! -f "$p" ]; then # a deleted test: judge the default branch's copy under its own name
-      tmp=$(mktemp -d); git show "$base:$rel" >"$tmp/${rel##*/}" 2>/dev/null
+    if [ ! -f "$p" ]; then # a deleted test: judge the fork point's copy under its own name
+      git cat-file -e "$base:$rel" 2>/dev/null || continue
+      tmp=$(mktemp -d); git show "$fork:$rel" >"$tmp/${rel##*/}" 2>/dev/null
       approved "$tmp/${rel##*/}" || { rm -rf "$tmp"; continue; }
       rm -rf "$tmp" # mutant-ok delete: the scratch copy only leaves a file in the temp folder
       record "$rel" && continue
@@ -67,13 +71,13 @@ if [ "$tool" = Bash ] && [ "$event" = PostToolUse ]; then
     while IFS= read -r l; do
       [ -n "$l" ] || continue # mutant-ok delete: steps prints no empty line
       [ -f "$p" ] && grep -qxF -- "$l" "$p" || lost=1
-    done < <(git show "$base:$rel" | steps)
+    done < <(git show "$fork:$rel" | steps)
     [ "$lost" = 1 ] || continue
-    mkdir -p "$(dirname "$p")"; git show "$base:$rel" >"$p"
+    mkdir -p "$(dirname "$p")"; git show "$fork:$rel" >"$p"
     hit="$hit $rel"
-  done < <(git diff --name-only "$base" 2>/dev/null)
+  done < <(git diff --name-only "$fork" 2>/dev/null)
   [ -n "$hit" ] || exit 0
-  echo "approved-test-lock: the command changed the Given, When or Then lines of$hit, so the default branch's copy is back." >&2
+  echo "approved-test-lock: the command changed the Given, When or Then lines of$hit, so the copy the branch forked with is back." >&2
   echo "A change to an approved example goes through examples' CHANGING.md: open its red-pen section with the new wording, and once it comes back ticked the record lets this edit through." >&2
   exit 2
 fi
@@ -83,7 +87,7 @@ case "$tool" in
     case "$path" in /*) ;; *) path="$PWD/$path" ;; esac
     path=$(realpath -m -- "$path") # a .., a double slash or a symlinked folder names the same file
     rel=$(locked "$path") || exit 0
-    old=$(git show "$base:$rel" | steps)
+    old=$(git show "$fork:$rel" | steps)
     swap() { if [ "$3" = true ]; then new=${new//"$1"/"$2"}; else new=${new/"$1"/"$2"}; fi; }
     if [ "$tool" = Write ]; then
       new=$(get .tool_input.content)
