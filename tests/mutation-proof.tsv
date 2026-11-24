@@ -27,6 +27,7 @@ local-path-guard.sh	7c65ca0ba2090c8c	8af3a7393171798b	31/31
 merge-point.sh	a19dbe9167831b34	fc64871b4e62cca4	2/2
 merged-branch-guard.sh	82af13fe1be3f462	984491ccbaffecd5	79/79
 open-heads.sh	b15397c66d1e2bd6	aed5400e318a30c4	11/11
+opponent-batch-guard-antigravity.py	0fd87fd2435876c0	f472db5e1fc398dc	91/91
 opponent-batch-guard.sh	34ccca8c7d4852cb	6973a6dd29dcdbd2	70/70
 opponent-wait-guard.sh	b0571c4bacf65987	1e3050b9384000f4	32/32
 opponents.jq	ef5b0de61c7fac0b	4d3fa388889aeabb	47/47
