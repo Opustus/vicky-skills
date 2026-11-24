@@ -3,6 +3,8 @@
 # case file came out plainer than the first hand-made one and left a zip per
 # rebuild: a page with contents, a label legend and coloured labels, files
 # folded away, a case folder with a fixed layout, and one readable zip per case.
+# shellcheck disable=SC2016  # check() evals each single-quoted body later, so it expands then.
+# shellcheck disable=SC2034  # variables set here are read inside the bodies check() evals.
 set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 kit="$root/plugins/vicky-skills/skills/writing/case-file/scripts"
@@ -89,4 +91,15 @@ rm -f "$c"/out/*.zip; bundle "$c/out/glow.html" "$c/files" "$c/out" --readme "$c
 out=$(caught "$c"/out/*.zip); status=$?
 check "CF-E52 a leak inside the zip fails, naming the file" '[ "$status" -ne 0 ] && grep -q "leak.frag" <<<"$out"'
 rm "$c/files/leak.frag"
+# Given a case file whose shown file holds a line wider than the page
+# When it is built as a PDF
+# Then the PDF shows the whole line, wrapped, with no part cut off
+w="$scratch/.case-files/wide"; mkdir -p "$w/sections" "$w/files" "$w/raw" "$w/out"
+printf '# Wide\n' > "$w/README.md"
+long="start$(printf 'q%.0s' $(seq 1 300))tailmark"
+printf 'short line\n%s\n' "$long" > "$w/files/wide.txt"
+printf '<!-- KIND research -->\n<h2>The answer</h2>\n<!-- FILE files/wide.txt -->\n' > "$w/sections/1-answer.html"
+build "$w" "$w/out/wide.html" --formats html,pdf >/dev/null
+check "CF-E54 a code line wider than the page wraps whole in the PDF" '[ -s "$w/out/wide.pdf" ] && pdftotext "$w/out/wide.pdf" - 2>/dev/null | tr -d " \n" | grep -q "$long"'
+
 exit $fail
