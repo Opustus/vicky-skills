@@ -128,4 +128,12 @@ git -C "$t/v" checkout -q --detach
 check "record off a branch refuses and writes nothing" '[ $r = 2 ] && ! grep -q s3 -r "$t/v/.git/vicky-skills"'
 (cd "$t/v" && git checkout -q feat && bash "$dm/verdict.sh" record s4 >/dev/null 2>&1; echo $?) >"$t/rc"
 check "record exits 0" '[ "$(cat "$t/rc")" = 0 ]'
+CLAUDE_PLUGIN_DATA= PLUGIN_DATA="$t/mo-pd" bash "$dm/mark-outside.sh" s1 "pr 7"
+check "mark-outside resolves PLUGIN_DATA when CLAUDE_PLUGIN_DATA is unset" '[ "$(cat "$t/mo-pd/outside-read/s1")" = "pr 7" ]'
+agy_dm="$t/.gemini/config/plugins/vicky-skills"
+mkdir -p "$agy_dm/scripts" "$agy_dm/skills/deathmatch/scripts"
+cp "$dm/../../../../scripts/plugin-data.sh" "$agy_dm/scripts/"
+cp "$dm/mark-outside.sh" "$agy_dm/skills/deathmatch/scripts/"
+CLAUDE_PLUGIN_DATA= PLUGIN_DATA= bash "$agy_dm/skills/deathmatch/scripts/mark-outside.sh" s2 "issue 9"
+check "mark-outside resolves Antigravity flattened plugin_data" '[ "$(cat "$t/.gemini/antigravity/plugin_data/vicky-skills/outside-read/s2")" = "issue 9" ]'
 exit $fail
