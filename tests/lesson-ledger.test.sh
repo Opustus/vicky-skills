@@ -7,9 +7,9 @@ dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
 fail=0
 expect() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: want '$2', got '$3'"; fail=1; fi; }
 code() { CLAUDE_PLUGIN_DATA="$dir/data" bash "$ledger" "$@" >/dev/null 2>&1; echo $?; }
-expect "no data folder set is an error" 2 "$(CLAUDE_PLUGIN_DATA= bash "$ledger" since 2026 >/dev/null 2>&1; echo $?)"
+expect "no data folder set is an error" 2 "$(CLAUDE_PLUGIN_DATA='' bash "$ledger" since 2026 >/dev/null 2>&1; echo $?)"
 inst="$dir/plugins/cache/mkt/plug/1.0/scripts"; mkdir -p "$inst"; cp "$ledger" "$(dirname "$ledger")/plugin-data.sh" "$inst/"
-expect "an installed copy with no data folder set finds its own" "lesson-x (plugin)" "$(CLAUDE_PLUGIN_DATA= bash "$inst/lesson-ledger.sh" add plugin lesson-x && CLAUDE_PLUGIN_DATA= bash "$inst/lesson-ledger.sh" since 2000 && [ -f "$dir/plugins/data/plug-mkt/lessons.tsv" ])"
+expect "an installed copy with no data folder set finds its own" "lesson-x (plugin)" "$(CLAUDE_PLUGIN_DATA='' bash "$inst/lesson-ledger.sh" add plugin lesson-x && CLAUDE_PLUGIN_DATA='' bash "$inst/lesson-ledger.sh" since 2000 && [ -f "$dir/plugins/data/plug-mkt/lessons.tsv" ])"
 expect "add without a snag is a usage error" 2 "$(code add plugin)"
 expect "since without a time is a usage error" 2 "$(code since)"
 expect "an unknown verb is a usage error" 2 "$(code list)"
@@ -17,4 +17,10 @@ expect "add makes the data folder and exits 0" 0 "$(code add repo "$(printf 'a t
 expect "a tab or newline in the snag keeps one line of three columns" "3 1" "$(awk -F '\t' '{print NF, NR}' "$dir/data/lessons.tsv")"
 expect "since exits 0" 0 "$(code since 2000-01-01T00:00:00Z)"
 expect "since with no ledger prints nothing and exits 0" "0 " "$(CLAUDE_PLUGIN_DATA="$dir/none" bash "$ledger" since 2000 2>&1; echo "$? ")"
+# K3 (ticked 2026-11-24): a keep shows in the ledger tagged keep, apart from
+# snags. This already holds, since the home column takes any word, so it is a
+# plain regression test.
+CLAUDE_PLUGIN_DATA="$dir/k3" bash "$ledger" add keep "leads with the pick" >/dev/null
+CLAUDE_PLUGIN_DATA="$dir/k3" bash "$ledger" add plugin "a snag" >/dev/null
+expect "K3 a keep is tagged keep, apart from snags" "leads with the pick (keep)|a snag (plugin)" "$(CLAUDE_PLUGIN_DATA="$dir/k3" bash "$ledger" since 2000 | paste -sd'|')"
 exit $fail
