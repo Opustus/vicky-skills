@@ -21,6 +21,15 @@ check "a second run reuses it" 'again=$(run missing.war "$good") && [ "$again" =
 check "a download that fails keeps nothing and says so" '! run missing.war 1111 >/dev/null && grep -q "could not download" "$dir/err" && [ ! -d "$dir/data/drawio/1111" ]'
 check "a wrong hash keeps nothing" '! run app.war 0000 >/dev/null && grep -q "not the pinned" "$dir/err" && [ ! -d "$dir/data/drawio/0000" ]'
 check "an entry outside the folder is refused" '! run bad.war "$bad" >/dev/null && [ ! -f "$dir/data/escape.txt" ] && [ ! -d "$dir/data/drawio/$bad" ]'
-check "no data folder, no fetch" '! CLAUDE_PLUGIN_DATA= bash "$fetch" >/dev/null 2>&1'
+check "no data folder, no fetch" '! CLAUDE_PLUGIN_DATA= PLUGIN_DATA= bash "$fetch" >/dev/null 2>&1'
 check "the fetch folder is cleaned up" '[ -z "$(ls -d "$dir/data"/drawio-fetch.* 2>/dev/null)" ]'
+mkdir -p "$dir/pd"
+pd_home=$(CLAUDE_PLUGIN_DATA= PLUGIN_DATA="$dir/pd" DRAWIO_URL="file://$dir/app.war" DRAWIO_SHA256="$good" bash "$fetch" 2>/dev/null)
+check "PLUGIN_DATA works when CLAUDE_PLUGIN_DATA is unset" '[ -f "$pd_home/index.html" ] && [ "$pd_home" = "$dir/pd/drawio/$good" ]'
+agy_root="$dir/.gemini/config/plugins/vicky-skills"
+mkdir -p "$agy_root/scripts" "$agy_root/skills/drawing-board/scripts" "$dir/.gemini/antigravity/plugin_data/vicky-skills"
+cp "$(dirname "$fetch")/../../../../scripts/plugin-data.sh" "$agy_root/scripts/"
+cp "$fetch" "$agy_root/skills/drawing-board/scripts/"
+agy_home=$(CLAUDE_PLUGIN_DATA= PLUGIN_DATA= DRAWIO_URL="file://$dir/app.war" DRAWIO_SHA256="$good" bash "$agy_root/skills/drawing-board/scripts/fetch-drawio.sh" 2>/dev/null)
+check "Antigravity flattened plugin resolves plugin_data" '[ -f "$agy_home/index.html" ] && [ "$agy_home" = "$dir/.gemini/antigravity/plugin_data/vicky-skills/drawio/$good" ]'
 exit $fail

@@ -1,0 +1,16 @@
+{
+  "deathmatch-opponent-batch-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "invoke_subagent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/opponent-batch-guard-antigravity.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+The opponent inspects the diff (`git diff main...HEAD`) instead of reading all 18 untouched `src/mod_*.sh` files in full, flags the symptom fix in `src/handler.sh`, and keeps its report under 600 words.
