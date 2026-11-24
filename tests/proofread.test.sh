@@ -17,6 +17,14 @@ cat >> "$STUB_DIR/sent"
 case "${STUB_MODE:-ok}" in
   ok) echo '{"choices":[{"message":{"content":"no changes"}}]}' ;;
   empty) echo '{"choices":[]}' ;;
+  busy) echo 'curl: (22) The requested URL returned error: 503' >&2
+    echo '[{"error": {"code": 503, "message": "This model is currently experiencing high demand."}}]'; exit 22 ;;
+  refused) echo '{"error": {"message": "API key not valid."}}'; exit 22 ;;
+  quota) echo '{"error": "quota exceeded"}'; exit 22 ;;
+  plain) echo 'upstream refused the request'; exit 22 ;;
+  two) echo '{"error": {"message": "outer"}, "x": {"error": "inner"}}'; exit 22 ;;
+  blank) echo '{"error": {"message": ""}, "x": {"error": "deep"}}'; exit 22 ;;
+  html) echo 'curl: (22) The requested URL returned error: 502' >&2; printf '<html>\n<body>Bad Gateway</body>\n</html>\n'; exit 22 ;;
 esac
 STUB
 chmod +x "$dir/bin/curl"
@@ -33,6 +41,22 @@ check "a key variable name that is no name falls back" '[ $rc -eq 0 ] && [ ! -e 
 
 run GEMINI_API_KEY=k STUB_MODE=empty
 check "an answer with no notes falls back" '[ $rc -eq 0 ] && grep -q "^proofread: session model" <<<"$out"'
+
+# Gemini wraps an error in an array, and curl adds its own line on stderr.
+run GEMINI_API_KEY=k STUB_MODE=busy
+check "an error inside an array gives its message" '[ $rc -eq 0 ] && grep -q "^proofread: session model, because .*failed: This model is currently experiencing high demand.$" <<<"$out"'
+run GEMINI_API_KEY=k STUB_MODE=refused
+check "an error object gives its message" '[ $rc -eq 0 ] && grep -q "failed: API key not valid.$" <<<"$out"'
+run GEMINI_API_KEY=k STUB_MODE=quota
+check "an error given as a string gives that string" '[ $rc -eq 0 ] && grep -q "failed: quota exceeded$" <<<"$out"'
+run GEMINI_API_KEY=k STUB_MODE=plain
+check "a body that is no JSON, with no curl line, gives its last line" '[ $rc -eq 0 ] && grep -q "failed: upstream refused the request$" <<<"$out"'
+run GEMINI_API_KEY=k STUB_MODE=two
+check "the first error in the body wins" '[ $rc -eq 0 ] && grep -q "failed: outer$" <<<"$out"'
+run GEMINI_API_KEY=k STUB_MODE=blank
+check "an empty error message gives way to the next one" '[ $rc -eq 0 ] && grep -q "failed: deep$" <<<"$out"'
+run GEMINI_API_KEY=k STUB_MODE=html
+check "a body that is no JSON gives curl's own line" '[ $rc -eq 0 ] && grep -q "failed: curl: (22) The requested URL returned error: 502$" <<<"$out"'
 
 mkdir -p "$dir/nojq"; for t in bash awk mktemp chmod rm tail cat env; do ln -sf "$(command -v $t)" "$dir/nojq/$t"; done; ln -sf "$dir/bin/curl" "$dir/nojq/curl"
 out=$(env -i PATH="$dir/nojq" GEMINI_API_KEY=k STUB_DIR="$dir" "$dir/nojq/bash" "$pr" "$dir/draft.md" 2>&1); rc=$?
