@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its test later, so the quotes keep it unexpanded
+# shellcheck disable=SC2034 # list is read inside the eval'd test
+# transcripts.py lists sessions in a few lines and writes a digest that keeps
+# what came before a compaction, without skill bodies or the compact summary.
+set -u
+root=$(cd "$(dirname "$0")/.." && pwd)
+t="$root/plugins/vicky-skills/skills/writing/case-file/scripts/transcripts.py"
+s=$(mktemp -d); trap 'rm -rf "$s"' EXIT
+fail=0
+check() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fail=1; fi; }
+cat > "$s/a1.jsonl" <<'J'
+{"type":"user","timestamp":"2026-11-18T18:59:00Z","message":{"content":"<command-name>/clear</command-name>\n<command-args></command-args>"}}
+{"type":"user","timestamp":"2026-11-18T19:00:00Z","message":{"content":"Why does the lantern not glow?"}}
+{"type":"user","timestamp":"2026-11-18T19:01:00Z","message":{"content":"Base directory for this skill: x"}}
+{"type":"assistant","timestamp":"2026-11-18T19:20:00Z","message":{"content":[{"type":"text","text":"Wrong texture name."},{"type":"tool_use","name":"Bash"}]}}
+{"type":"system","subtype":"compact_boundary","timestamp":"2026-11-18T20:00:00Z"}
+{"type":"user","isCompactSummary":true,"timestamp":"2026-11-18T20:00:01Z","message":{"content":"Summary text"}}
+not json
+J
+list=$(python3 "$t" list --dir "$s")
+check "list names the session by its first ask" '[[ $list == *"a1"*"turns=1 compactions=1"*"Why does the lantern"* ]]'
+python3 "$t" digest a1 "$s/out/d.txt" --dir "$s" >/dev/null
+check "the digest keeps the finding from before the compaction" 'grep -q "Wrong texture name" "$s/out/d.txt"'
+check "the digest leaves out skill bodies and the compact summary" '! grep -qE "Base directory|Summary text" "$s/out/d.txt"'
+touch -d '2026-11-17' "$s/a1.jsonl"; : > "$s/e1.jsonl"; : > "$s/e2.jsonl"
+check "a limit counts only sessions with a turn" '[[ $(python3 "$t" list --dir "$s" --limit 1) == *"a1"* ]]'
+printf '%s\n' '{"type":"user","timestamp":"2026-11-19T10:00:00Z","message":{"content":"<command-message>vicky-skills:case-file</command-message>\n<command-name>/vicky-skills:case-file</command-name>\n<command-args>glow the lantern</command-args>"}}' > "$s/b1.jsonl"
+list=$(python3 "$t" list --dir "$s")
+check "a session begun by a typed command is listed by its command" '[[ $list == *"b1"*"/vicky-skills:case-file glow the lantern"* ]]'
+check "the newest session is listed first" '[[ $list == b1* ]]'
+check "a missing session is refused" '! python3 "$t" digest zz "$s/x" --dir "$s" 2>/dev/null'
+# Found by the deathmatch: a user may type what an injected record starts with.
+printf '%s\n' '{"type":"user","timestamp":"2026-11-20T10:00:00Z","message":{"content":"Caveat: the lantern is brass"}}' \
+  '{"type":"user","timestamp":"2026-11-20T10:01:00Z","message":{"content":"[Request interrupted by user]"}}' > "$s/c1.jsonl"
+list=$(python3 "$t" list --dir "$s")
+check "a turn the user typed is counted whatever it starts with" '[[ $list == *"c1"*"turns=1 "*"Caveat: the lantern"* ]]'
+mkdir -p "$s/sub"
+check "an id that climbs out of the folder is refused" '! python3 "$t" digest ../a1 "$s/x" --dir "$s/sub" 2>/dev/null && [ ! -e "$s/x" ]'
+# Found by the deathmatch: a session run in a worktree keeps its transcript in the worktree's own folder.
+h="$s/home"; r="$s/repo"
+g() { git -C "$r" -c user.name=t -c user.email=t@example.invalid "$@"; }
+mkdir -p "$r" && git -C "$r" init -q -b main && g commit -q --allow-empty -m start && g worktree add -q "$r/.claude/worktrees/w" 2>/dev/null
+slug=$(cd "$r" && pwd -P | sed 's/[^A-Za-z0-9-]/-/g')
+mkdir -p "$h/.claude/projects/$slug" "$h/.claude/projects/$slug--claude-worktrees-w" "$h/.claude/projects/$slug-other"
+printf '%s\n' '{"type":"user","timestamp":"2026-11-21T10:00:00Z","message":{"content":"main ask"}}' > "$h/.claude/projects/$slug/m1.jsonl"
+printf '%s\n' '{"type":"user","timestamp":"2026-11-21T11:00:00Z","message":{"content":"worktree ask"}}' > "$h/.claude/projects/$slug--claude-worktrees-w/w1.jsonl"
+printf '%s\n' '{"type":"user","timestamp":"2026-11-21T12:00:00Z","message":{"content":"other repo ask"}}' > "$h/.claude/projects/$slug-other/o1.jsonl"
+list=$(cd "$r" && HOME="$h" python3 "$t" list)
+check "list from the main checkout shows its worktrees' sessions" '[[ $list == *"m1"* && $list == *"w1"* && $list != *"o1"* ]]'
+list=$(cd "$r/.claude/worktrees/w" && HOME="$h" python3 "$t" list)
+check "list from a worktree shows the main checkout's sessions" '[[ $list == *"m1"* && $list == *"w1"* ]]'
+(cd "$r" && HOME="$h" python3 "$t" digest w1 "$s/w1.txt" >/dev/null)
+check "digest finds a worktree's session from the main checkout" 'grep -q "worktree ask" "$s/w1.txt"'
+exit $fail
