@@ -227,4 +227,72 @@ check "carry after a last newline adds no blank line" '[ "$(grep -c "^$" "$t/eb"
 cp "$t/body" "$t/body.before"
 (cd "$t/v" && CLAUDE_CODE_SESSION_ID=me bash "$dm/verdict.sh" carry "$t/body" ggg7777 aaa1111 other) >"$t/out" 2>&1; r=$?
 check "carry refuses another session's id, names this one, and writes nothing" '[ $r = 2 ] && grep -q "this session is me" "$t/out" && cmp -s "$t/body" "$t/body.before" && ! grep -q "^other " "$t/v/.git/vicky-skills/deathmatch/feat"'
+# verdict.sh since: only a verdict commit still in HEAD's history is a fixed point.
+git init -qb main "$t/sn" && git -C "$t/sn" -c user.name=t -c user.email=t@t commit -q --allow-empty -m a && a=$(git -C "$t/sn" rev-parse HEAD)
+git -C "$t/sn" -c user.name=t -c user.email=t@t commit -q --allow-empty -m b && b=$(git -C "$t/sn" rev-parse HEAD)
+git -C "$t/sn" switch -qc side "$a" && git -C "$t/sn" -c user.name=t -c user.email=t@t commit -q --allow-empty -m s && side=$(git -C "$t/sn" rev-parse HEAD) && git -C "$t/sn" switch -q main
+printf 'Deathmatch verdict for %s: 0 proven findings\nDeathmatch verdict for %s: 0 proven findings\nDeathmatch verdict for %s: 1 proven findings\n' "$a" "$b" "$side" > "$t/sn.md"
+out=$(cd "$t/sn" && bash "$dm/verdict.sh" since "$t/sn.md"); r=$?
+check "since skips a newer verdict whose commit left HEAD's history, and takes the newest one in it" '[ $r = 0 ] && [ "$out" = "$b" ]'
+printf 'Deathmatch verdict for %s: 0 proven findings\n' "$side" > "$t/sn2.md"
+out=$(cd "$t/sn" && bash "$dm/verdict.sh" since "$t/sn2.md"); r=$?
+check "since prints nothing and exits 1 when no verdict commit is in HEAD's history" '[ $r = 1 ] && [ -z "$out" ]'
+(cd "$t/sn" && bash "$dm/verdict.sh" since "$t/missing.md") >/dev/null 2>&1; r=$?
+check "since refuses a body file that doesn't exist" '[ $r = 2 ]'
+# verdict.sh due carries a verdict only with a base and a session, and only from a commit that exists.
+printf 'Deathmatch verdict for 1234567: 0 proven findings\n' > "$t/dc.md"; cp "$t/dc.md" "$t/dc0.md"
+(cd "$t/sn" && bash "$dm/verdict.sh" due "$t/dc.md" "$b" main s9 >/dev/null 2>&1); r=$?
+check "due stays due when the body's verdict names no commit, and leaves the body" '[ $r = 0 ] && cmp -s "$t/dc.md" "$t/dc0.md"'
+printf 'Deathmatch verdict for %s: 0 proven findings\n' "$b" > "$t/dc2.md"; cp "$t/dc2.md" "$t/dc3.md"
+(cd "$t/sn" && git switch -q side && bash "$dm/verdict.sh" due "$t/dc2.md" "$side" main >/dev/null 2>&1); r=$?; git -C "$t/sn" switch -q main
+check "due with a base but no session carries nothing" '[ $r = 0 ] && cmp -s "$t/dc2.md" "$t/dc3.md"'
+# verdict.sh due carries a verdict across a rebase that keeps the content, and records it.
+unset CLAUDE_CODE_SESSION_ID # as record's checks above: CI never sets it
+cr="$t/carry"; git init -q -b main "$cr"; g() { git -C "$cr" -c user.name=t -c user.email=t@example.invalid "$@"; }
+printf 'a\n' > "$cr/a"; g add -A; g commit -qm a; g switch -qc feat; printf 'f\n' > "$cr/f"; g add -A; g commit -qm f; old=$(g rev-parse HEAD)
+g switch -q main; printf 'm\n' > "$cr/m"; g add -A; g commit -qm m; g switch -q feat; g rebase -q main; new=$(g rev-parse HEAD)
+printf 'x\nDeathmatch verdict for %s: 0 proven findings\n' "$old" > "$t/cb.md"
+cp "$t/cb.md" "$t/cb1.md"
+(cd "$cr" && CLAUDE_CODE_SESSION_ID=me bash "$dm/verdict.sh" due "$t/cb.md" "$new" main other >"$t/cbo" 2>&1); r=$?
+check "due refuses to carry for another session's id, as record does" '[ $r = 2 ] && grep -q "this session is me" "$t/cbo" && cmp -s "$t/cb.md" "$t/cb1.md"'
+(cd "$cr" && bash "$dm/verdict.sh" due "$t/cb.md" "$new" main >/dev/null 2>&1); r=$?
+check "due with no session carries nothing, even when the content matches" '[ $r = 0 ] && cmp -s "$t/cb.md" "$t/cb1.md"'
+(cd "$cr" && bash "$dm/verdict.sh" due "$t/cb.md" "$new" "" s9 >/dev/null 2>&1); r=$?
+check "due with no base carries nothing" '[ $r = 0 ] && cmp -s "$t/cb.md" "$t/cb1.md"'
+(cd "$cr" && bash "$dm/verdict.sh" due "$t/cb.md" "$new" main s9 >/dev/null 2>&1); r=$?
+rec="$cr/.git/vicky-skills/deathmatch/feat"
+check "due carries a rebased verdict: exit 1, a carried line, and this session's record" \
+  '[ $r = 1 ] && grep -qxF "Deathmatch verdict for $new: carried from $old, no content change" "$t/cb.md" && grep -qxF "s9 $new" "$rec"'
+printf 'g\n' >> "$cr/f"; g commit -qam g; new2=$(g rev-parse HEAD); cp "$t/cb.md" "$t/cb0.md"
+(cd "$cr" && bash "$dm/verdict.sh" due "$t/cb.md" "$new2" main s9 >/dev/null 2>&1); r=$?
+check "due stays due after a content change, and leaves the body" '[ $r = 0 ] && cmp -s "$t/cb.md" "$t/cb0.md"'
+g switch -q --detach; (cd "$cr" && bash "$dm/verdict.sh" due "$t/cb.md" "$new" main s8 >/dev/null 2>&1); r=$?
+printf 'Deathmatch verdict for %s: 0 proven findings' "$old" > "$t/cn.md"
+(cd "$cr" && bash "$dm/verdict.sh" due "$t/cn.md" "$new" main s7 >/dev/null 2>&1)
+check "due's carry starts its line on a line of its own" 'grep -qx "Deathmatch verdict for $old: 0 proven findings" "$t/cn.md" && grep -q "^Deathmatch verdict for $new: carried" "$t/cn.md"'
+printf 'Deathmatch verdict for %s: 0 proven findings\n' "$old" > "$t/cl.md"
+(cd "$cr" && bash "$dm/verdict.sh" due "$t/cl.md" "$new" main s7 >/dev/null 2>&1)
+check "due's carry after a last newline adds no blank line" '[ "$(grep -c "^$" "$t/cl.md")" = 0 ] && grep -q "carried" "$t/cl.md"'
+check "due carries on a detached head without a record" '[ $r = 1 ] && ! grep -q "^s8 " "$rec" 2>/dev/null'
+# triggers.sh --rerun: code since the verdict keeps Standards and Holds fighting; plain mode gives no reasons.
+rr="$t/rr"; git init -q -b main "$rr"; h() { git -C "$rr" -c user.name=t -c user.email=t@example.invalid "$@"; }
+printf 'a\n' > "$rr/a.sh"; h add -A; h commit -qm a; rv=$(h rev-parse HEAD); printf 'b\n' >> "$rr/a.sh"; h commit -qam b
+o=$(cd "$rr" && bash "$dm/triggers.sh" --rerun "$rv")
+check "a rerun with code since the verdict sends Standards, Holds and Simplicity" \
+  'grep -qx "fight: standards" <<<"$o" && grep -qx "fight: holds" <<<"$o" && grep -qx "fight: simplicity" <<<"$o" && grep -qx "out of reach: claims (the body has no Proof section)" <<<"$o"'
+printf '# n\n' > "$rr/n.md"; h add -A; h commit -qm n; rv2=$(h rev-parse HEAD~1)
+o=$(cd "$rr" && bash "$dm/triggers.sh" "$rv2")
+check "a plain run on a Markdown-only diff keeps Standards and gives no reasons" 'grep -qx "fight: standards" <<<"$o" && grep -qx "out of reach: holds" <<<"$o"'
+o=$(cd "$rr" && bash "$dm/triggers.sh" --rerun "$rv2")
+check "a Markdown-only rerun names the verdict in Standards' reason" 'grep -qx "out of reach: standards (only Markdown changed since the verdict for $rv2, which held the rules)" <<<"$o" && grep -qx "out of reach: cause (no commit or body line claims a fix)" <<<"$o"'
+# A whitespace-only change can change meaning (YAML nesting), so it is no carry.
+ws="$t/ws"; git init -q -b main "$ws"; w() { git -C "$ws" -c user.name=t -c user.email=t@example.invalid "$@"; }
+printf 'a:\n  b: 1\n' > "$ws/c.yml"; w add -A; w commit -qm a; w switch -qc feat; printf 'a:\n  b: 1\n  c: 3\n' > "$ws/c.yml"; w commit -qam c; wv=$(w rev-parse HEAD)
+printf 'a:\n  b: 1\nc: 3\n' > "$ws/c.yml"; w commit -qam top; wh=$(w rev-parse HEAD); w reset -q --hard "$wv"; w switch -qc other main; printf 'a:\n  b: 1\nc: 3\n' > "$ws/c.yml"; w commit -qam top; wh=$(w rev-parse HEAD)
+printf 'Deathmatch verdict for %s: 0 proven findings\n' "$wv" > "$t/ws.md"; cp "$t/ws.md" "$t/ws0.md"
+(cd "$ws" && bash "$dm/verdict.sh" due "$t/ws.md" "$wh" main s9 >/dev/null 2>&1); r=$?
+check "due carries no verdict across a whitespace-only change of meaning" '[ $r = 0 ] && cmp -s "$t/ws.md" "$t/ws0.md"'
+# A rerun with nothing changed since the verdict sends no Holds, Simplicity or Standards.
+o=$(cd "$rr" && bash "$dm/triggers.sh" --rerun HEAD)
+check "a rerun with no change since the verdict leaves Holds and Simplicity out" 'grep -qx "out of reach: holds (no file other than Markdown changed)" <<<"$o" && grep -q "^out of reach: simplicity" <<<"$o"'
 exit $fail
