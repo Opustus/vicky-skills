@@ -3,12 +3,14 @@
 # Every numbered step under a "Steps" heading says when it is done, and every
 # skill opens with a title, so a step never ends on a feeling.
 set -u
-cd "$(dirname "$0")/../plugins/vicky-skills"
+cd "$(dirname "$0")/../plugins/vicky-skills" || exit 1
 fail=0
 for f in skills/*/*/SKILL.md; do
   grep -q '^# ' "$f" || { echo "FAIL $f has no title"; fail=1; }
   missing=$(awk '
     function check() { gsub(/[ \t]+/, " ", text); if (step != "" && text !~ /Done when/) print step; step = text = "" }
+    /^```/ { fence = !fence; next }
+    fence { next }
     /^## / { check(); in_steps = ($0 ~ /^## .*Steps/); next }
     in_steps && /^[0-9]+\. / { check(); step = $0 }
     in_steps { text = text " " $0 }
