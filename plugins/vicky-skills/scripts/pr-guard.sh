@@ -16,8 +16,9 @@
 #   5. A stacked one whose base changes fewer than guard_pr_stack_min_lines
 #      lines against the default branch (default 300), unless its body holds a
 #      line starting `Separate work:`.
-#   6. A body that opens or replaces a pull request without ship-it's Status,
-#      Summary, Proof and Risk sections, and a body filled from the commits
+#   6. A body that opens or replaces a pull request without each section the
+#      repo's pull request template asks for (ship-it's Status, Summary,
+#      Proof and Risk when it has none), and a body filled from the commits
 #      (--fill), in a repo with docs/agents/issue-tracker.md, unless that
 #      file says "PR template: off". A gh command to a repository the user
 #      does not administer skips this rule: that repository keeps its own template.
@@ -154,6 +155,31 @@ if [[ $event != PostToolUse ]] && [ -n "$sends_text" ] && hits=$(stale_hits "$fo
     "STANDARDS.md's 'Dated or lasting' law says what replaces each one. A word quoted as an example goes in backticks, which the check skips. Then run the command again."
 fi
 
+# The repo's own pull request template, at any place a forge reads one, or nothing.
+repo_template() {
+  local top # mutant-ok delete: top is only read inside this function, so a global changes nothing; kept local so a caller's names stay unshadowed
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  find "$top" -maxdepth 2 -path "$top/.git" -prune -o -type f -iname pull_request_template.md -print 2>/dev/null | sort | head -n 1 | grep .
+}
+# The headings a body must hold: each heading of the repo's template whose
+# comment does not open with "Optional", or ship-it's four when it has
+# none or names none.
+required_sections() {
+  local template # mutant-ok delete: template is only read inside this function, so a global changes nothing; kept local so a caller's names stay unshadowed
+  local found # mutant-ok delete: found is only read inside this function, so a global changes nothing; kept local so a caller's names stay unshadowed
+  template=$(repo_template) &&
+    found=$(awk '
+      { sub(/\r$/, "") }
+      /^## / { if (h != "") print h; h = substr($0, 4); sub(/[[:space:]]+$/, "", h); c = 0; next }
+      h == "" { next }
+      c { t = $0; sub(/^[[:space:]]+/, "", t); if (first && t ~ /^Optional/) h = ""; if (t != "") first = 0; if ($0 ~ /-->/) c = 0; next }
+      /^<!--/ { t = $0; sub(/^<!--[[:space:]]*/, "", t); if (t ~ /^Optional/) { h = ""; next } if (t !~ /-->/) { c = 1; first = (t == "") } next }
+      NF { print h }
+      END { if (h != "") print h }' "$template" | awk '!seen[$0]++') && [ -n "$found" ] &&
+    { printf '%s\n' "$found"; return; }
+  printf '%s\n' Status Summary Proof Risk
+}
+
 # Rule 6, in each gh or tea segment that creates a pull request or edits its body.
 tracker="$(git rev-parse --show-toplevel 2>/dev/null)/docs/agents/issue-tracker.md"
 if [[ $event != PostToolUse ]] && [ -f "$tracker" ] && ! grep -qix 'PR template:[[:space:]]*off' "$tracker"; then
@@ -168,12 +194,13 @@ if [[ $event != PostToolUse ]] && [ -f "$tracker" ] && ! grep -qix 'PR template:
     fi
     grep -Eq '[[:space:]]create([[:space:]]|$)|[[:space:]](--body|--body-file|-b|-F|--description|-d)([[:space:]=]|$)' <<<"$segment" || continue
     missing=()
-    for section in Status Summary Proof Risk; do
-      grep -Eq "^[[:space:]'\"]*## $section([[:space:]]|$)" <<<"$forge_text" || missing+=("## $section")
+    mapfile -t sections < <(required_sections)
+    for section in "${sections[@]}"; do
+      awk -v s="## $section" '{ sub(/^[[:space:]'"'"'"]+/, ""); sub(/\r$/, "") } $0 == s || index($0, s " ") == 1 || index($0, s "\t") == 1 { f = 1 } END { exit !f }' <<<"$forge_text" || missing+=("## $section")
     done
     printf -v list '%s, ' "${missing[@]}"
     [ ${#missing[@]} = 0 ] || refuse "This pull request body has no ${list%, } section." \
-      "Write the body with the ship-it skill, whose template holds every section, and pass it with --body-file."
+      "Write the body with the ship-it skill, in the repo's own pull request template when it has one, and pass it with --body-file."
   done < <(grep -Eo '(^|[^[:alnum:]_-])(gh|tea)[[:space:]]+(pr|pulls)[[:space:]]+(create|edit)[^;&|]*' <<<"$quoted")
 fi
 
