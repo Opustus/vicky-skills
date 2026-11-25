@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Bash): refuses a command that files a ticket (`plane file`,
 # `tea issues create`, `gh issue create`) until the session has started a
-# filing skill: mission-brief for planned work, groundhog-day for a bug report.
+# filing skill: mission-brief for planned work, groundhog-day for a bug report,
+# away-team for a ticket titled "Research: <question>".
 # Each searches the tracker and the codebase before it writes anything. On unless the plugin option
 # guard_ticket_filing is false or 0. Reads the session transcript for Skill
 # calls; a missing transcript or a missing jq lets the command through.
@@ -15,7 +16,8 @@ command=$(jq -r '.tool_input.command // ""' <<<"$payload" 2>/dev/null)
 # never a command, so it is dropped first.
 raw=$command
 command=$(awk -f "$(dirname "$0")/heredoc-strip.awk" <<<"$command" | sed -zE "s/'[^']*'//g; s/\"([^\"\\\\]|\\\\.)*\"//g")
-grep -Eq '(^|[;&|(][[:space:]]*|[[:space:]])((\./)?bin/)?plane[[:space:]]+file([[:space:]]|$)|(^|[^[:alnum:]_-])tea[[:space:]]+(issues?|i)[[:space:]]+(create|c)([[:space:]]|$)|(^|[^[:alnum:]_-])gh[[:space:]]+issue[[:space:]]+create([[:space:]]|$)' <<<"$command" || exit 0
+filing='(^|[;&|(][[:space:]]*|[[:space:]])((\./)?bin/)?plane[[:space:]]+file([[:space:]]|$)|(^|[^[:alnum:]_-])tea[[:space:]]+(issues?|i)[[:space:]]+(create|c)([[:space:]]|$)|(^|[^[:alnum:]_-])gh[[:space:]]+issue[[:space:]]+create([[:space:]]|$)'
+grep -Eq "$filing" <<<"$command" || exit 0
 # A call that only asks for the usage text files nothing.
 grep -Eq '(file|create)[[:space:]]+--help([[:space:]]|$)' <<<"$command" && exit 0
 # The title sits in quotes, which the stripped command no longer holds.
@@ -30,5 +32,18 @@ transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
 agent=$(agent_of "$payload")
 skill_started "$transcript" mission-brief "$agent" && exit 0
 skill_started "$transcript" groundhog-day "$agent" && exit 0
-echo "ticket-filing-guard: refused. A ticket is filed only through a filing skill, never by hand: groundhog-day for a bug report, mission-brief for anything else. Each checks the source material (away-team when a fact is missing), searches the tracker for the same premise, and searches the codebase for anything that looks like the thing, before it writes a word. Start the one that fits, then file. Nothing in this command ran, not even its other steps: rerun the ones that need no change on their own." >&2
+# away-team files one note titled "Research: <question>", through one plain
+# command on one line: the tracker's create command, then its quoted title
+# (plane's after the project, gh's and tea's after --title or -t) opening
+# with Research: and holding no $, backtick or backslash, then at most a
+# --body-file in the repo, /tmp or $TMPDIR, with no folder or file that starts with a
+# dot, and a </dev/null. Nothing else fits, so a second title, an
+# inline body, a comment or a chained command is refused.
+# shellcheck disable=SC2016 # $TMPDIR is matched as text, never expanded
+research='^[[:space:]]*(((\./)?bin/)?plane[[:space:]]+file[[:space:]]+[[:alnum:]][[:alnum:]_-]*[[:space:]]+|gh[[:space:]]+issue[[:space:]]+create[[:space:]]+(--title|-t)([[:space:]]+|=)|tea[[:space:]]+(issues?|i)[[:space:]]+(create|c)[[:space:]]+(--title|-t)([[:space:]]+|=))("Research:[^"$`\\]*"|'"'"'Research:[^'"'"']*'"'"')([[:space:]]+(--body-file|-F)[[:space:]]+"?(/tmp/|\$TMPDIR/|\$\{TMPDIR\}/)?[[:alnum:]_][[:alnum:]_.-]*(/[[:alnum:]_][[:alnum:]_.-]*)*"?)?([[:space:]]+<[[:space:]]*/dev/null)?[[:space:]]*$'
+research_title() {
+  [[ $raw != *$'\n'* ]] && grep -Eq "$research" <<<"$raw"
+}
+research_title && skill_started "$transcript" away-team "$agent" && exit 0
+echo "ticket-filing-guard: refused. A ticket is filed only through a filing skill, never by hand: groundhog-day for a bug report, away-team for a note titled Research: <question>, filed by one plain command of its own with its body in --body-file, mission-brief for anything else. Each checks the source material (away-team when a fact is missing), searches the tracker for the same premise, and searches the codebase for anything that looks like the thing, before it writes a word. Start the one that fits, then file. Nothing in this command ran, not even its other steps: rerun the ones that need no change on their own." >&2
 exit 2

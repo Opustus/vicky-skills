@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # each command is test input, matched as text and never expanded
 # The ticket-filing guard: a command that files a ticket (plane file, tea issues
 # create, gh issue create) is refused until the session has started
-# mission-brief. Every other command, a quoted mention, the setting off, a
+# mission-brief or groundhog-day, or away-team for one plain Research filing.
+# Every other command, a quoted mention, the setting off, a
 # missing transcript and bad input pass.
 set -u
 guard="$(cd "$(dirname "$0")/.." && pwd)/plugins/vicky-skills/scripts/ticket-filing-guard.sh"
@@ -11,6 +13,7 @@ started() { jq -nc --arg s "$1" '{type:"assistant",message:{content:[{type:"tool
 started vicky-skills:do > "$dir/none.jsonl"
 { started vicky-skills:do; started vicky-skills:mission-brief; } > "$dir/briefed.jsonl"
 { started vicky-skills:do; started vicky-skills:groundhog-day; } > "$dir/bugged.jsonl"
+{ started vicky-skills:do; started vicky-skills:away-team; } > "$dir/away.jsonl"
 has() { # name word...: ok when the last refusal holds every word
   local name=$1 word; shift
   for word in "$@"; do grep -q -- "$word" "$dir/err" || { echo "FAIL $name"; fail=1; return; }; done
@@ -32,6 +35,45 @@ has "the steer names the three checks" mission-brief codebase tracker
 expect "gh issue create after groundhog-day started runs" 0 "$dir/bugged.jsonl" 'gh issue create --title T --body b'
 expect "gh issue create with neither filing skill is refused" 2 "$dir/none.jsonl" 'gh issue create --title T'
 has "the steer names groundhog-day for a bug report" groundhog-day
+expect "a Research ticket after away-team started runs" 0 "$dir/away.jsonl" 'bin/plane file GAME "Research: does save trim the name?" --body-file b.md'
+expect "any other ticket after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file GAME "Fix the save button" --body-file b.md'
+has "the steer names away-team for a research note" away-team
+expect "a ticket with Research: only in its body after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file APP "Fix the save button" --body "Research: see notes"'
+expect "a ticket with Research: only in a shell comment after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file APP "Fix bug" # Research:'
+expect "a second filing chained on a Research ticket after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file APP "Research: x"; bin/plane file APP "Add feature"'
+expect "a -t Research: title inside a shell comment after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file APP "Fix the button" # -t "Research: x"'
+expect "a -t Research: inside a quoted body after away-team is refused" 2 "$dir/away.jsonl" "bin/plane file APP \"Fix it\" --body \"see -t 'Research: x'\""
+expect "a plane file with no project before its Research title is refused" 2 "$dir/away.jsonl" 'bin/plane file "Research: x"'
+expect "a filing nested in a quoted \$(...) after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body "$(gh issue create --title Fix --body b)"'
+expect "a filing nested in quoted backticks after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body "`gh issue create --title Fix`"'
+expect "a -t Research: in a later command after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title Fix --body b; echo -t "Research: x"'
+expect "a quoted plane word in a later command after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title Fix; echo "plane" file X "Research: y"'
+expect "two titles after away-team are refused" 2 "$dir/away.jsonl" 'gh issue create --title Fix --title "Research: x"'
+expect "a Research ticket after another command after away-team is refused" 2 "$dir/away.jsonl" 'cd repo && gh issue create --title "Research: x" --body b'
+expect "a Research ticket with a command chained after it after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body b && echo done'
+expect "a gh --title=Research: after away-team runs" 0 "$dir/away.jsonl" 'gh issue create --title="Research: x" --body-file b.md'
+expect "a gh Research title after away-team runs" 0 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body-file b.md'
+expect "a Research ticket with a body file before a second title after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body "#1" --title "Fix"'
+expect "a Research ticket with an inline body after away-team is refused, so the body comes from a file" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body "# Heading"'
+expect "a Research ticket followed by a second line after away-team is refused" 2 "$dir/away.jsonl" "$(printf 'gh issue create --title "Research: x" --body-file b.md\nrm -rf zz')"
+expect "a Research title holding a command substitution after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: $(touch zz)" --body-file b.md'
+expect "a Research body file outside the repo after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body-file ../../.env'
+expect "a Research body file at an absolute path after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body-file /etc/passwd'
+expect "a Research body read from stdin after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" -F -'
+expect "a Research body file in a hidden folder after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body-file .secrets/b.md'
+expect "a Research body file in scratch after away-team runs" 0 "$dir/away.jsonl" 'gh issue create --title "Research: x" --body-file /tmp/s1/b.md'
+expect "a Research body file in a repo folder through -F after away-team runs" 0 "$dir/away.jsonl" 'gh issue create -t "Research: x" -F notes/b.md'
+expect "a flag in plane's project slot after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file -- "Research: x"'
+expect "plane with two spaces and no project after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file  "Research: x"'
+expect "./bin/plane with a Research title after away-team runs" 0 "$dir/away.jsonl" './bin/plane file APP "Research: x"'
+expect "a Research title holding backticks after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Research: `id`" --body-file b.md'
+expect "a Research ticket with leading spaces after away-team runs" 0 "$dir/away.jsonl" '  gh issue create --title "Research: x" --body-file b.md'
+expect "a Research body file in TMPDIR after away-team runs" 0 "$dir/away.jsonl" 'bin/plane file APP "Research: x" --body-file "$TMPDIR/body.md"'
+expect "a Research body file climbing out of TMPDIR after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file APP "Research: x" --body-file $TMPDIR/../.env'
+expect "a Research body file named by another variable after away-team is refused" 2 "$dir/away.jsonl" 'bin/plane file APP "Research: x" --body-file "$f"'
+expect "a tea Research title after away-team runs" 0 "$dir/away.jsonl" "tea issues create -t 'Research: x' </dev/null"
+expect "a gh ticket with Research: only in its body after away-team is refused" 2 "$dir/away.jsonl" 'gh issue create --title "Fix it" --body "Research: x"'
+expect "a Research ticket with no filing skill is refused" 2 "$dir/none.jsonl" 'gh issue create --title "Research: x" --body b'
 expect "plane file after mission-brief started runs" 0 "$dir/briefed.jsonl" 'bin/plane file GAME T'
 expect "tea issues create after mission-brief started runs" 0 "$dir/briefed.jsonl" 'tea issues create --title T </dev/null'
 jq -nc '{type:"user",message:{content:"<command-message>mission-brief</command-message>\n<command-name>/vicky-skills:mission-brief</command-name>"}}' > "$dir/slash.jsonl"
