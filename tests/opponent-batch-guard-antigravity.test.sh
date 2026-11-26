@@ -116,4 +116,24 @@ EOF
 out_sw="$(run_guard "$tmp/ssw" "{\"conversationId\":\"csw\",\"transcriptPath\":\"$tmp/t_switch.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash\"}}}")"
 check "mid-session switch to Claude uses latest model" '[[ "$out_sw" == *'\''"decision": "deny"'\''* && "$out_sw" == *"Claude"* ]]'
 
+cat >"$tmp/t_denied.jsonl" <<'EOF'
+{"type":"GENERIC","content":"OK"}
+{"type":"GENERIC","content":"at once: 2\nmemory cap: 1.9G"}
+{"type":"PLANNER_RESPONSE","tool_calls":[{"id":"c1","name":"invoke_subagent","args":{"TypeName":"holds-opponent"}},{"id":"c2","name":"invoke_subagent","args":{"TypeName":"intent-opponent"}}]}
+{"type":"GENERIC","content":"tool call denied by pre-tool hook"}
+{"type":"GENERIC","content":"Created the following subagent:\n{\"conversationId\": \"11111111-1111-1111-1111-111111111111\"}"}
+EOF
+out_den="$(run_guard "$tmp/sden" "{\"conversationId\":\"cden\",\"transcriptPath\":\"$tmp/t_denied.jsonl\",\"toolCall\":{\"id\":\"c3\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"standards-opponent\"}}}")"
+check "denied invoke_subagent does not shift subsequent pending opponent types" '[[ "$out_den" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_cross_turn.jsonl" <<'EOF'
+{"type":"GENERIC","content":"at once: 2\nmemory cap: 1.9G"}
+{"type":"PLANNER_RESPONSE","tool_calls":[{"id":"c1","name":"invoke_subagent","args":{"TypeName":"holds-opponent"}}]}
+{"type":"GENERIC","content":"unexpected failure"}
+{"type":"PLANNER_RESPONSE","tool_calls":[{"id":"c2","name":"invoke_subagent","args":{"TypeName":"intent-opponent"}}]}
+{"type":"GENERIC","content":"Created the following subagent:\n{\"conversationId\": \"22222222-2222-2222-2222-222222222222\"}"}
+EOF
+out_ct="$(run_guard "$tmp/sct" "{\"conversationId\":\"cct\",\"transcriptPath\":\"$tmp/t_cross_turn.jsonl\",\"toolCall\":{\"id\":\"c3\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"standards-opponent\"}}}")"
+check "new PLANNER_RESPONSE clears stale uncreated pending opponents" '[[ "$out_ct" == *'\''"decision": "allow"'\''* ]]'
+
 exit "$fails"

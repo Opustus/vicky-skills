@@ -47,6 +47,7 @@ def parse_transcript(path):
                     if 1 <= val <= CEILING:
                         limit = val
             elif stype == "PLANNER_RESPONSE":
+                pending.clear()
                 if d.get("model"):
                     parent_model = str(d["model"])
                 for tc in d.get("tool_calls") or []:
@@ -58,6 +59,8 @@ def parse_transcript(path):
                 m = CONV_ID_RE.search(content)
                 if m and pending:
                     active[m.group(1)] = pending.pop(0)
+            elif stype == "GENERIC" and pending and "tool call denied" in content:
+                pending.pop(0)
             elif stype == "SYSTEM_MESSAGE":
                 for cid in [c for c in active if c in content]:
                     active.pop(cid, None)

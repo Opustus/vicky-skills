@@ -2,7 +2,7 @@ adr-scope-hint.sh	dd0f4f2d0f53e71a	146f9786b4544b3c	7/7
 advisory-deadline.sh	e8c29246ec59a753	fd0311fd272eb61c	14/14
 advisory-guard.sh	daff7e96fa68bbfd	d0864c99d3e045e7	56/56
 ai-credit.sh	ce9c03ae1de6bb7b	54a54a7b1bf4c1d7	1/1
-antigravity-hook-adapter.py	695a085b1c3c15ea	d4cae05aa8b740d3	138/138
+antigravity-hook-adapter.py	9adf09b5dce86c75	a6e8d8f08bb5d03b	140/140
 approved-spec.sh	1631dde4942ed5b6	d5a1068815cf4493	5/5
 approved-test-lock.sh	30402fcb88e5195f	aeb7120cb3461bc3	114/114
 assign-expand.sh	a2d6f7ea568cb59e	78556a7a7d220be6	5/5
@@ -29,7 +29,7 @@ local-path-guard.sh	7c65ca0ba2090c8c	8af3a7393171798b	31/31
 merge-point.sh	a19dbe9167831b34	fc64871b4e62cca4	2/2
 merged-branch-guard.sh	82af13fe1be3f462	984491ccbaffecd5	79/79
 open-heads.sh	b15397c66d1e2bd6	877c09bc786d8cb4	11/11
-opponent-batch-guard-antigravity.py	db08eaa7a3e1067a	29703bf21f508271	100/100
+opponent-batch-guard-antigravity.py	778f5465a2d82311	3e915d7f5d3861f9	105/105
 opponent-batch-guard.sh	32945ab4bad23aca	eea870f536cc9efc	71/71
 opponent-wait-guard.sh	b0571c4bacf65987	1e3050b9384000f4	32/32
 opponents.jq	ef5b0de61c7fac0b	4d3fa388889aeabb	47/47

@@ -116,6 +116,12 @@ done
 out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" '{"toolCall":{"name":"unknown_tool"}}')"
 check "PreToolUse unknown tool allows" '[[ "$out" == *'\''"decision": "allow"'\''* ]]'
 
+# Null arg values do not crash PreToolUse or PostToolUse
+out_null_pre="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"cwd\":\"$tmp/repo\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":null}}}")"
+out_null_post="$(run_adp "$tmp/stub" PostToolUse "$tmp/data" "{\"cwd\":\"$tmp/repo\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":null}}}")"
+check "PreToolUse null CommandLine allows without TypeError" '[[ "$out_null_pre" == *'\''"decision": "allow"'\''* ]]'
+check "PostToolUse null CommandLine returns {}" '[[ "$out_null_post" == "{}" ]]'
+
 # Non-git cwd + missing cwd + transcriptPath forwarding + pre-set env option not overwritten
 mkdir -p "$tmp/plain"
 out="$(CLAUDE_PLUGIN_OPTION_OPT_STR=keep run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"cwd\":\"$tmp/plain\",\"transcriptPath\":\"/t.jsonl\",\"toolCall\":{\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"r\"}}}")"

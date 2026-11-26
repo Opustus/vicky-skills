@@ -157,7 +157,7 @@ def handle_pre_tool(payload, scripts_dir, run_cwd, payload_cwd, env, conv_id, tr
         return emit({"decision": "allow"})
     tool_name, key_map = ARG_MAP[ag_tool]
     args = tc.get("args") or {}
-    tool_input = {dst: args.get(src, "") for dst, src in key_map.items()}
+    tool_input = {dst: args.get(src) or "" for dst, src in key_map.items()}
     claude_json = json.dumps({
         "session_id": conv_id, "transcript_path": transcript_path, "cwd": payload_cwd,
         "hook_event_name": "PreToolUse", "tool_name": tool_name, "tool_input": tool_input,
@@ -176,7 +176,7 @@ def handle_post_tool(payload, scripts_dir, run_cwd, payload_cwd, env, conv_id, t
         return emit({})
     tool_name, key_map = ARG_MAP[ag_tool]
     args = tc.get("args") or {}
-    tool_input = {dst: args.get(src, "") for dst, src in key_map.items()}
+    tool_input = {dst: args.get(src) or "" for dst, src in key_map.items()}
     claude_json = json.dumps({
         "session_id": conv_id, "transcript_path": transcript_path, "cwd": payload_cwd,
         "hook_event_name": "PostToolUse", "tool_name": tool_name, "tool_input": tool_input,

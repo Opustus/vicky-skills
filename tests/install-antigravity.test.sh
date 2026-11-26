@@ -32,6 +32,6 @@ check "no unrewritten CLAUDE_PLUGIN_ROOT or CLAUDE_PLUGIN_DATA in skills" \
   '! grep -rnE "\$\{CLAUDE_PLUGIN_(ROOT|DATA)\}" "$dest/skills"'
 
 check "converted agent has subagent frontmatter and execution footer" \
-  'grep -q "^subagent: true$" "$dest/agents/simplicity-opponent.md" && grep -q "WaitMsBeforeAsync: 10000" "$dest/agents/simplicity-opponent.md"'
+  'grep -q "^subagent: true$" "$dest/agents/simplicity-opponent.md" && grep -q "^tools: \[.*run_command" "$dest/agents/simplicity-opponent.md" && grep -q "WaitMsBeforeAsync: 10000" "$dest/agents/simplicity-opponent.md"'
 
 exit "$fails"

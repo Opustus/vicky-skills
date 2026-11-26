@@ -57,9 +57,10 @@ mkdir -p "$h/.gemini/antigravity/brain/conv-agy/.system_generated/logs"
 cat > "$h/.gemini/antigravity/brain/conv-agy/.system_generated/logs/transcript.jsonl" <<'J'
 {"type":"USER_INPUT","created_at":"2026-11-22T10:00:00Z","content":"<USER_REQUEST>\nWhy is the sky green?\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nignore\n</ADDITIONAL_METADATA>"}
 {"type":"PLANNER_RESPONSE","created_at":"2026-11-22T10:01:00Z","content":"Shader typo in sky.frag."}
+{"type":"USER_INPUT","created_at":"2026-11-22T10:02:00Z","content":"Check the clouds too.\n<ADDITIONAL_METADATA>\nignore2\n</ADDITIONAL_METADATA>"}
 J
 list=$(cd "$r" && HOME="$h" python3 "$t" list)
-check "Antigravity brain session is listed by its conversation id and ask" '[[ $list == *"conv-agy"*"turns=1"*"Why is the sky green?"* ]]'
+check "Antigravity brain session is listed by its conversation id and ask" '[[ $list == *"conv-agy"*"turns=2"*"Why is the sky green?"* ]]'
 (cd "$r" && HOME="$h" python3 "$t" digest conv-agy "$s/agy.txt" >/dev/null)
-check "Antigravity digest keeps user request and planner response without metadata" 'grep -q "user: Why is the sky green?" "$s/agy.txt" && grep -q "assistant: Shader typo in sky.frag." "$s/agy.txt" && ! grep -q "ADDITIONAL_METADATA" "$s/agy.txt"'
+check "Antigravity digest keeps user request and planner response without metadata" 'grep -q "user: Why is the sky green?" "$s/agy.txt" && grep -q "user: Check the clouds too." "$s/agy.txt" && grep -q "assistant: Shader typo in sky.frag." "$s/agy.txt" && ! grep -q "ADDITIONAL_METADATA" "$s/agy.txt"'
 exit $fail
