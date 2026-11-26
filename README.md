@@ -198,6 +198,8 @@ claude plugin marketplace add vickydotbat/vicky-skills --scope project
 
 Turn on auto-update under `/plugin`, then **Marketplaces**. The plugin has no version number, so every commit to `main` is an update.
 
+On Antigravity, clone this repository and run `python3 scripts/install-antigravity.py`. Put any plugin option overrides as JSON in `~/.gemini/antigravity/plugin_data/vicky-skills/config.json`.
+
 ## Proofreading
 
 `human-voice` sends each draft to a second model for a proofread, then weighs its notes. The second model reports spelling, grammar, punctuation and unclear sentences. It leaves your voice and structure alone.

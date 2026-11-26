@@ -44,6 +44,7 @@ Read the repo's testing standards first, where the `Testing standards:` line in 
    - Each `person:` line names one reason only a person can check the item: look, feel, real client, second client, extender, hardware, outside account or timing. The lint also refuses an item that spawns, gives, creates, places, equips, summons, seeds or loads a thing with no `kit:` line.
 
    Done when `checklist.py` exits 0, which also means `scripts/lint-checklist.py` passed, and every step the user must take sits on an item line or its `kit:` line.
+   Proven by: tests/vicky-session-id.test.sh
 4. **Open it** the way `red-pen` step 2 opens a draft file, in the same turn the code it checks lands, with its 🚪 line, and wait for the close. When the effort's draft file holds sections, open it with `red-pen` first and write its text back, so the sitting checks the approved wording. Done when the user pressed Done, the editor has exited, or the user said done.
 5. **Read it back.** Fix nothing. Each item carries its mark and notes, and Extra tests and Other hold anything the user added.
    - First act on each item's own `notes:` line: a note that asks for an action (file it on the hand-test ticket, find an integration test for it) is the instruction for that item, and it outranks every default here.

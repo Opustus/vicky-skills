@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # VICKY_SESSION_ID acts as the session-id fallback when CLAUDE_CODE_SESSION_ID
 # is unset (for run_command shells in Antigravity).
 set -u

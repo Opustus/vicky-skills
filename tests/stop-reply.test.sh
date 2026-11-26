@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # stop-reply.sh, sourced by the Stop hooks that read the agent's reply, lets
 # the stop through (exit 0) when the transcript can't be read as JSON, and
 # leaves only what the agent said since the user's last typed message.

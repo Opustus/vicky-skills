@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # Antigravity opponent-batch-guard decisions: batch.sh cap (default 1, ceiling 3),
 # holds-opponent fights alone, Model="pro" refused, finished opponent frees slot,
 # and non-opponents / malformed input pass.

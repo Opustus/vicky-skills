@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # the generated handler scripts keep literal $1
 # A small-file-count diff containing a 500-line data file and one symptom fix,
 # testing that opponents inspect the diff first on large data files regardless of
 # total file count and batch independent reads per turn.

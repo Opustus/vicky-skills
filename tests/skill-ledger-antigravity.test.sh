@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # skill-ledger.sh also records Read / read_file calls that open a skill's SKILL.md
 # (both grouped and flattened Antigravity layouts), and ignores non-SKILL.md reads.
 set -u

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # Antigravity lifecycle hook adapter decisions: config loading, PreToolUse
 # allow/deny (exit 2, permissionDecision deny, decision block), Bash/Edit/Write/
 # Agent/Read tool mapping, PostToolUse {}, SessionStart/PreInvocation injectSteps
@@ -39,7 +41,7 @@ JSON
 cat >"$tmp/stub/scripts/log-hook.sh" <<'SH'
 #!/usr/bin/env bash
 cat > "$CLAUDE_PLUGIN_DATA/last_payload.json"
-printf '%s|%s|%s|%s|%s\n' "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_OPTION_OPT_DEFAULT" "$CLAUDE_PLUGIN_OPTION_OPT_STR" "$CLAUDE_CODE_SESSION_ID" "$CLAUDE_PROJECT_DIR" > "$CLAUDE_PLUGIN_DATA/last_env.txt"
+printf '%s|%s|%s|%s|%s|%s\n' "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_OPTION_OPT_DEFAULT" "$CLAUDE_PLUGIN_OPTION_OPT_STR" "$CLAUDE_CODE_SESSION_ID" "$VICKY_SESSION_ID" "$CLAUDE_PROJECT_DIR" > "$CLAUDE_PLUGIN_DATA/last_env.txt"
 SH
 cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/approved-test-lock.sh"
 cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/review-brief-guard.sh"
@@ -47,6 +49,9 @@ cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/springboard.sh"
 cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/pkill-guard.sh"
 cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/opponent-wait-guard.sh"
 cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/whole-read-guard.sh"
+cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/outside-text-guard.sh"
+cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/publish-guard.sh"
+cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/advisory-guard.sh"
 cat >"$tmp/stub/scripts/adr-scope-hint.sh" <<'SH'
 #!/usr/bin/env bash
 cat >/dev/null
@@ -78,7 +83,7 @@ chmod +x "$tmp/stub/scripts/"*.sh
 mkdir -p "$tmp/repo/sub"
 out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"conversationId\":\"c2\",\"workspacePaths\":[\"$tmp/repo/sub\"],\"toolCall\":{\"name\":\"write_file\",\"args\":{\"Path\":\"f.txt\",\"Content\":\"hello\"}}}")"
 check "PreToolUse write_file maps args and permissionDecision deny" \
-  '[[ "$out" == *'\''"decision": "deny"'\''* && "$out" == *"deny-reason"* ]] && grep -qx "$tmp/stub|true|hi|c2|$tmp/repo" "$tmp/data/last_env.txt" && grep -q "\"content\": \"hello\"" "$tmp/data/last_payload.json"'
+  '[[ "$out" == *'\''"decision": "deny"'\''* && "$out" == *"deny-reason"* ]] && grep -qx "$tmp/stub|true|hi|c2|c2|$tmp/repo" "$tmp/data/last_env.txt" && grep -q "\"content\": \"hello\"" "$tmp/data/last_payload.json"'
 
 # edit_file maps old_string/new_string and decision:block
 rm "$tmp/stub/scripts/adr-scope-hint.sh"
@@ -86,12 +91,26 @@ out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"conversationId\":\"c2\",\"
 check "PreToolUse edit_file maps args and decision:block" \
   '[[ "$out" == *'\''"decision": "deny"'\''* && "$out" == *"block-reason"* ]] && grep -q "\"old_string\": \"a\"" "$tmp/data/last_payload.json"'
 
-# invoke_subagent maps Agent + Bash keyword rules (pkill, opponent, plane)
+# invoke_subagent maps Agent + Bash keyword rules (pkill, plane, merge, curl, glab, advisory.sh, head)
 out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"conversationId\":\"c2\",\"cwd\":\"$tmp/repo\",\"toolCall\":{\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"r\",\"Prompt\":\"p\",\"Role\":\"role\"}}}")"
 check "PreToolUse invoke_subagent maps Agent" '[[ "$out" == *'\''"decision": "allow"'\''* ]] && grep -q "\"subagent_type\": \"r\"" "$tmp/data/last_payload.json"'
 
-out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"conversationId\":\"c2\",\"cwd\":\"$tmp/repo\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"pkill x; plane show 1; opponent\"}}}")"
+out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"conversationId\":\"c2\",\"cwd\":\"$tmp/repo\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"pkill x; plane show 1 | head; curl -X POST u; glab repo view; advisory.sh publish; gh pr merge 1\"}}}")"
 check "PreToolUse Bash keyword rules allow when stubs pass" '[[ "$out" == *'\''"decision": "allow"'\''* ]]'
+
+for pair in \
+  "outside-text-guard.sh:curl -X POST https://example.invalid" \
+  "publish-guard.sh:glab repo create o/r --public" \
+  "advisory-guard.sh:advisory.sh cve GHSA-1" \
+  "whole-read-guard.sh:read-item.sh 1 | head" \
+  "opponent-wait-guard.sh:\$GH pr merge 1"; do
+  s="${pair%%:*}"; cmd="${pair#*:}"
+  printf '#!/usr/bin/env bash\necho "hit-%s"; exit 2\n' "$s" > "$tmp/stub/scripts/$s"
+  chmod +x "$tmp/stub/scripts/$s"
+  out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"cwd\":\"$tmp/repo\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"$cmd\"}}}")"
+  check "PreToolUse routes '$cmd' to $s" '[[ "$out" == *'\''"decision": "deny"'\''* && "$out" == *"hit-$s"* ]]'
+  cp "$tmp/stub/scripts/log-hook.sh" "$tmp/stub/scripts/$s"
+done
 
 # Unknown tool allows / PostToolUse returns {}
 out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" '{"toolCall":{"name":"unknown_tool"}}')"
@@ -100,7 +119,7 @@ check "PreToolUse unknown tool allows" '[[ "$out" == *'\''"decision": "allow"'\'
 # Non-git cwd + missing cwd + transcriptPath forwarding + pre-set env option not overwritten
 mkdir -p "$tmp/plain"
 out="$(CLAUDE_PLUGIN_OPTION_OPT_STR=keep run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"cwd\":\"$tmp/plain\",\"transcriptPath\":\"/t.jsonl\",\"toolCall\":{\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"r\"}}}")"
-check "non-git cwd and pre-set env option preserved" 'grep -qx "$tmp/stub|true|keep||$tmp/plain" "$tmp/data/last_env.txt" && grep -q "\"transcript_path\": \"/t.jsonl\"" "$tmp/data/last_payload.json"'
+check "non-git cwd and pre-set env option preserved" 'grep -qx "$tmp/stub|true|keep|||$tmp/plain" "$tmp/data/last_env.txt" && grep -q "\"transcript_path\": \"/t.jsonl\"" "$tmp/data/last_payload.json"'
 out="$(run_adp "$tmp/stub" PreToolUse "$tmp/data" "{\"cwd\":\"$tmp/missing\",\"toolCall\":{\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"r\"}}}")"
 check "missing cwd still runs hook with empty payload cwd" '[[ "$out" == *'\''"decision": "allow"'\''* ]] && grep -q "\"cwd\": \"\"" "$tmp/data/last_payload.json"'
 

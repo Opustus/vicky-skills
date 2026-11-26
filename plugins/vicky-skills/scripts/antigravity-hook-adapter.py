@@ -21,16 +21,20 @@ ARG_MAP = {
 }
 
 BASH_PRE_RULES = (
-    (("git", "gh", "tea", "gs"), (
-        "pr-guard.sh", "outside-text-guard.sh", "draft-guard.sh", "worktree-place.sh",
+    (("git", "gh", "tea", "gs", "git-spice"), (
+        "pr-guard.sh", "draft-guard.sh", "worktree-place.sh",
         "local-path-guard.sh", "post-body-guard.sh", "push-behind-guard.sh", "shellcheck-guard.sh",
         "rebase-guard.sh", "restack-origin-guard.sh", "git-guard.sh", "red-first-guard.sh",
-        "merged-branch-guard.sh", "publish-guard.sh", "advisory-guard.sh", "foreign-post-hint.sh",
+        "merged-branch-guard.sh", "foreign-post-hint.sh",
     )),
+    (("git", "gh", "tea", "gs", "git-spice", "curl", "wget", "release-outside", "outside-read"), ("outside-text-guard.sh",)),
+    (("gh", "glab", "tea"), ("publish-guard.sh",)),
+    (("advisory.sh", "security-advisories", "gh", "tea", "curl", "wget"), ("advisory-guard.sh",)),
     (("tea",), ("tea-stdin.sh",)),
-    (("plane", "tea", "gh"), ("ticket-filing-guard.sh", "plane-block-guard.sh", "whole-read-guard.sh")),
+    (("plane", "tea", "gh"), ("ticket-filing-guard.sh", "plane-block-guard.sh")),
+    (("head", "tail", "grep", "cut", "awk", "sed"), ("whole-read-guard.sh",)),
     (("pkill",), ("pkill-guard.sh",)),
-    (("opponent", "batch.sh"), ("opponent-wait-guard.sh",)),
+    (("gh", "tea", "pulls/", "PullRequest", "merge", "ready"), ("opponent-wait-guard.sh",)),
 )
 
 STATIC_PRE_HOOKS = {
@@ -93,6 +97,7 @@ def build_env(plugin_root, plugin_data, project_dir, conv_id):
     env["CLAUDE_PLUGIN_ROOT"] = plugin_root
     env["CLAUDE_PLUGIN_DATA"] = plugin_data
     env["CLAUDE_CODE_SESSION_ID"] = conv_id
+    env["VICKY_SESSION_ID"] = conv_id
     env["CLAUDE_PROJECT_DIR"] = project_dir
     load_options(plugin_root, plugin_data, env)
     return env
@@ -129,7 +134,7 @@ def pre_tool_hooks(tool_name, tool_input):
     if tool_name != "Bash":
         return list(STATIC_PRE_HOOKS.get(tool_name, ()))
     cmd = tool_input.get("command", "")
-    return [h for keys, hs in BASH_PRE_RULES if any(k in cmd for k in keys) for h in hs] + ["approved-test-lock.sh"]
+    return list(dict.fromkeys([h for keys, hs in BASH_PRE_RULES if any(k in cmd for k in keys) for h in hs] + ["approved-test-lock.sh"]))
 
 
 def post_tool_hooks(tool_name, tool_input):

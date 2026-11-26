@@ -35,7 +35,9 @@ cut_saved=no
 id=$(grep -oE "($reads)[[:space:]]+[^[:space:]|;&)>]+" <<<"$command" | head -1 | awk '{print $NF}')
 # A whole read of the same ticket earlier this session: a read of this id with no cutter after it.
 if [ -n "$id" ] && [ -f "$transcript" ]; then # mutant-ok: with no id the pattern needs a read with no ticket, and with no transcript jq reads nothing, so neither half lets a read through alone
-  jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command // empty' "$transcript" 2>/dev/null |
+  jq -r 'if .type == "assistant" then (.message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command // empty)
+    elif .type == "PLANNER_RESPONSE" then (.tool_calls[]? | select(.name == "run_command") | .args.CommandLine // empty)
+    else empty end' "$transcript" 2>/dev/null |
     sed -E 's/[0-9]*>&[0-9-]+//g' |
     grep -E "(^|[;&|(])[[:space:]]*([^[:space:];&|()]*/)?($reads)[[:space:]]+$(sed -E 's/[][\.*^$+?(){}|/]/\\&/g' <<<"$id")([[:space:]]|$)" |
     grep -Evq "\\|[[:space:]]*$tools|>" && exit 0

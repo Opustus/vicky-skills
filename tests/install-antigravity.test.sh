@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # install-antigravity.py flattens skills into skills/<name>/SKILL.md, rewrites
 # ${CLAUDE_PLUGIN_ROOT} and ${CLAUDE_PLUGIN_DATA}, copies hooks.json and
 # .claude-plugin/plugin.json, and converts agents/*.md to Antigravity format.

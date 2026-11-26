@@ -22,4 +22,6 @@ turn=$(tail -n 400 "$transcript" | jq -cs '
       else empty end]' 2>/dev/null) || exit 0
 # shellcheck disable=SC2034 # read by the hook that sources this
 said=$(jq -r '.[] | if .type == "text" then .text elif .type == "tool_use" and .name == "SendUserMessage" then .input.message else empty end | . + "\n"' <<<"$turn" 2>/dev/null)
+# shellcheck disable=SC2001 # parameter expansion with literal backticks triggers command substitution
+# shellcheck disable=SC2016 # sed strips literal backtick-quoted spans
 prose() { sed 's/`[^`]*`//g' <<<"$said"; }
