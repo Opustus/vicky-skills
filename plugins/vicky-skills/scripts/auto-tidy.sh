@@ -13,12 +13,14 @@ set -u
 . "$(dirname "$0")/merge-point.sh"
 # shellcheck source=drop-worktree.sh
 . "$(dirname "$0")/drop-worktree.sh"
+# shellcheck source=fork-tidy.sh
+. "$(dirname "$0")/fork-tidy.sh"
 case "${CLAUDE_PLUGIN_OPTION_AUTO_TIDY:-}" in false|0) exit 0 ;; esac
 # Read without jq, so a machine without it still tidies: after a tool call,
 # only a command that merged a pull request starts the tidy.
 payload=$(cat 2>/dev/null)
 if grep -Eq '"hook_event_name"[[:space:]]*:[[:space:]]*"PostToolUse"' <<<"$payload"; then
-  grep -Eq '"command"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*[;&|( ])?(gh|tea) +(pr|pulls) +merge([ "\\]|$)' <<<"$payload" || exit 0
+  grep -Eq '"command"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*([;&|( ]|\\n))?(gh|tea) +(pr|pulls) +merge([ "\\]|$)' <<<"$payload" || exit 0
 fi
 # The folder the session stands in, whose worktree is never removed.
 here=$(sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$payload"); here=${here%%$'\n'*}
@@ -36,8 +38,8 @@ notes=() went=() kept=()
 prs=$(
   if out=$(timeout 10 gh pr list --state all --limit 200 --json headRefName,state,headRefOid 2>/dev/null) && [ -n "$out" ]; then # mutant-ok: gh answers either a list or a failure, never success with no output
     jq -r '.[] | "\(.headRefName) \(.state) \(.headRefOid)"' <<<"$out" 2>/dev/null
-  elif out=$(timeout 10 tea api 'repos/{owner}/{repo}/pulls?state=all&limit=50' </dev/null 2>/dev/null) && [ -n "$out" ]; then # mutant-ok: tea answers either a list or a failure, never success with no output
-    jq -r '.[] | "\(.head.ref) \(if .merged then "MERGED" elif .state == "open" then "OPEN" else "CLOSED" end) \(.head.sha)"' <<<"$out" 2>/dev/null
+  else
+    tea_pulls '{owner}/{repo}'
   fi
 )
 pr() { awk -v b="$1" -v f="$2" '$1 == b { print $f; exit }' <<<"$prs"; }
@@ -152,6 +154,50 @@ while read -r rb; do
   fi
   GIT_TERMINAL_PROMPT=0 timeout 15 git push -q origin --delete "$b" >/dev/null 2>&1 && went+=("origin/$b")
 done < <(git for-each-ref --format='%(refname:short)' refs/remotes/origin)
+
+# Your fork on another remote: a repo of yours on origin's forge, GitHub or
+# Gitea, whose parent is origin.
+read -r oforge ologin oslug <<<"$(forge_of "$(git config --get remote.origin.url)")" # the URL as written: get-url would apply insteadOf
+if [ -n "$oslug" ] && who=$(forge_user "$oforge" "$ologin") && [ -n "$who" ]; then
+  while read -r rem; do
+    [ "$rem" = origin ] && continue # mutant-ok delete: origin is never its own parent, so the owner check below skips it too
+    read -r forge login slug <<<"$(forge_of "$(git config --get "remote.$rem.url")")"
+    [ "$forge $login $(repo_owner_parent "$forge" "$login" "$slug")" = "$oforge $ologin $who $oslug" ] || continue
+    GIT_TERMINAL_PROMPT=0 timeout 15 git fetch --prune --quiet "$rem" >/dev/null 2>&1 || continue
+    fork_tidy "$rem" "$forge" "$login" "$slug" "refs/remotes/$rem/" "$default" "$main_name"
+    for b in "${fork_gone[@]}"; do went+=("$rem/$b"); done
+    n=$(unmerged_note "git push $rem --delete")
+    [ -n "$n" ] && notes+=("On $rem: $n")
+  done < <(git remote)
+fi
+
+# remove_wt <path>: the repo's own removal script, or git, takes the folder off.
+remove_wt() {
+  local drop; drop=$(drop_script "$top")
+  if [ -n "$drop" ]; then (cd "$top" && "$top/$drop" "$1") >/dev/null 2>&1; else git worktree remove "$1" >/dev/null 2>&1; fi
+  git worktree prune >/dev/null 2>&1 # mutant-ok delete: a removed worktree left in the list only adds an entry no later check matches
+}
+# Each clean, unlocked, idle worktree on a detached HEAD that main already holds.
+while read -r wt; do
+  [ "$wt" = "$top" ] && continue # mutant-ok delete: the clone is the session's own folder, so in_use skips it too
+  git merge-base --is-ancestor "$(git -C "$wt" rev-parse HEAD 2>/dev/null)" "$default" 2>/dev/null || continue
+  [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || continue
+  in_use "$wt" && continue
+  remove_wt "$wt"
+  [ -d "$wt" ] || went+=("detached worktree ${wt##*/}")
+done < <(git worktree list --porcelain | awk '/^worktree /{p=substr($0, 10); l=0} /^locked/{l=1} /^detached/ && !l {print p}')
+# Each folder under .claude/worktrees that git no longer lists, when the repo names its own removal script.
+if [ -d "$top/.claude/worktrees" ] && [ -n "$(drop_script "$top")" ]; then # mutant-ok: with no folder the glob matches nothing a directory test passes
+  listed=$(git worktree list --porcelain | sed -n 's/^worktree //p')
+  for wt in "$top"/.claude/worktrees/*/; do
+    wt=${wt%/}
+    [ -d "$wt" ] || continue
+    grep -Fxq "$wt" <<<"$listed" && continue
+    in_use "$wt" && continue
+    remove_wt "$wt"
+    [ -d "$wt" ] || went+=("leftover folder ${wt##*/}")
+  done
+fi
 
 # Fast-forward each clean checkout, the clone or a worktree, that stands on the default branch.
 while read -r p; do
