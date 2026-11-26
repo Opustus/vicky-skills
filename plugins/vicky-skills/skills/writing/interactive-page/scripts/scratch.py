@@ -10,7 +10,7 @@ import tempfile
 
 
 def loose_page(path):
-    session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    session = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("VICKY_SESSION_ID") or ""
     if not session:
         return None
     temp = os.path.realpath(os.environ.get("TMPDIR") or tempfile.gettempdir())
