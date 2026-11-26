@@ -12,5 +12,52 @@
         ]
       }
     ]
+  },
+  "vicky-skills-adapter": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 ./scripts/antigravity-hook-adapter.py SessionStart",
+        "timeout": 30
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 ./scripts/antigravity-hook-adapter.py PreInvocation",
+        "timeout": 20
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command|edit_file|write_file|invoke_subagent|read_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/antigravity-hook-adapter.py PreToolUse",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "run_command|edit_file|write_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/antigravity-hook-adapter.py PostToolUse",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 ./scripts/antigravity-hook-adapter.py Stop",
+        "timeout": 310
+      }
+    ]
   }
 }

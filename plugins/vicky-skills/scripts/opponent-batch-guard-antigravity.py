@@ -29,8 +29,9 @@ def parse_transcript(path):
     limit = DEFAULT_LIMIT
     pending = []
     active = {}
+    parent_model = ""
     if not os.path.isfile(path):
-        return limit, active
+        return limit, active, parent_model
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             try:
@@ -46,6 +47,8 @@ def parse_transcript(path):
                     if 1 <= val <= CEILING:
                         limit = val
             elif stype == "PLANNER_RESPONSE":
+                if d.get("model"):
+                    parent_model = str(d["model"])
                 for tc in d.get("tool_calls") or []:
                     if tc.get("name") == "invoke_subagent":
                         tname = str((tc.get("args") or {}).get("TypeName") or "")
@@ -58,7 +61,7 @@ def parse_transcript(path):
             elif stype == "SYSTEM_MESSAGE":
                 for cid in [c for c in active if c in content]:
                     active.pop(cid, None)
-    return limit, active
+    return limit, active, parent_model
 
 
 def main():
@@ -73,7 +76,8 @@ def main():
     tname = str(args.get("TypeName") or "")
     if not tname.endswith("-opponent"):
         return allow()
-    if str(args.get("Model") or "") == "pro":
+    req_model = str(args.get("Model") or "")
+    if req_model == "pro":
         return deny("opponent-batch-guard: do not set Model='pro' on deathmatch opponents. Nothing was dispatched.")
 
     transcript = payload.get("transcriptPath") or ""
@@ -87,7 +91,20 @@ def main():
 
     with open(os.path.join(state_dir, f"{key}.lock"), "w", encoding="utf-8") as lock_f:
         fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)  # mutant-ok delete: serializes concurrent hook processes
-        limit, active = parse_transcript(transcript)
+        limit, active, parent_model = parse_transcript(transcript)
+        pm_lower = parent_model.lower()
+        if pm_lower.startswith("claude-") and req_model in ("flash", "flash_lite"):
+            return deny(
+                f"opponent-batch-guard: parent model is Claude ({parent_model}); use Model='inherit' on "
+                f"deathmatch opponents instead of '{req_model}' (which crosses into Gemini's quota pool). "
+                "Nothing was dispatched."
+            )
+        if pm_lower.startswith("gemini-") and "-pro" in pm_lower and req_model in ("", "inherit"):
+            return deny(
+                f"opponent-batch-guard: parent model is Pro-tier Gemini ({parent_model}); set Model='flash' "
+                f"or 'flash_lite' on deathmatch opponents instead of '{req_model or 'inherit'}'. "
+                "Nothing was dispatched."
+            )
         now = time.time()
         try:
             with open(rec_path, "r", encoding="utf-8") as rf:

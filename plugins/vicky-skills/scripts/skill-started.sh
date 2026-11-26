@@ -18,9 +18,11 @@ skill_started() {
     *) sub="${1%.jsonl}/subagents/agent-$3.jsonl" ;;
   esac
   {
-    jq -Rr --arg s "$2" "fromjson? | if .type == \"assistant\" then ($calls)
-      elif .type == \"user\" then (.message.content | strings | select(test(\"<command-name>/([A-Za-z0-9_-]+:)?\" + \$s + \"</command-name>\")) | \$s)
-      else empty end" "$1"
+    jq -Rr --arg s "$2" 'fromjson? | if .type == "assistant" then ('"$calls"')
+      elif .type == "user" then (.message.content | strings | select(test("<command-name>/([A-Za-z0-9_-]+:)?" + $s + "</command-name>")) | $s)
+      elif .type == "USER_INPUT" then (.content | strings | select(test("<SKILL>[^\n]*\"" + $s + "\"")) | $s)
+      elif .type == "PLANNER_RESPONSE" then (.tool_calls[]? | select(.name == "read_file") | (.args.Path // "") | capture("/skills/(?:[^/]+/)?(?<n>[A-Za-z0-9:_.-]+)/SKILL\\.md$") | .n)
+      else empty end' "$1"
     [ -z "$sub" ] || jq -Rr "fromjson? | select(.type == \"assistant\") | $calls" "$sub"
   } 2>/dev/null | grep -qxF -- "$2"
 }

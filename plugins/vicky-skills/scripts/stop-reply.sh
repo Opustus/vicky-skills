@@ -12,8 +12,14 @@ transcript=$(jq -r '.transcript_path // ""' <<<"$payload" 2>/dev/null)
 [ -f "$transcript" ] || exit 0 # mutant-ok delete: tail reads nothing from a missing file, so the reply reads empty and each hook exits 0
 # `turn` is the JSON array of the agent's content blocks since that message.
 turn=$(tail -n 400 "$transcript" | jq -cs '
-  (map(.type == "user" and (.isMeta | not) and ((.message.content | type) == "string" or any(.message.content[]?; .type == "text"))) | rindex(true)) as $u
-  | [.[(($u // -1) + 1):][] | select(.type == "assistant") | .message.content[]?]' 2>/dev/null) || exit 0
+  (map(
+    (.type == "user" and (.isMeta | not) and ((.message.content | type) == "string" or any(.message.content[]?; .type == "text")))
+    or (.type == "USER_INPUT")
+  ) | rindex(true)) as $u
+  | [.[(($u // -1) + 1):][] |
+      if .type == "assistant" then .message.content[]?
+      elif .type == "PLANNER_RESPONSE" and (.content | type) == "string" and .content != "" then {type: "text", text: .content}
+      else empty end]' 2>/dev/null) || exit 0
 # shellcheck disable=SC2034 # read by the hook that sources this
 said=$(jq -r '.[] | if .type == "text" then .text elif .type == "tool_use" and .name == "SendUserMessage" then .input.message else empty end | . + "\n"' <<<"$turn" 2>/dev/null)
 prose() { sed 's/`[^`]*`//g' <<<"$said"; }

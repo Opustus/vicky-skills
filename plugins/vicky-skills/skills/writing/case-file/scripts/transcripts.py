@@ -35,8 +35,17 @@ def default_dirs():
         common = ""
     root = os.path.dirname(os.path.realpath(common)) if common else cwd
     projects = Path.home() / ".claude" / "projects"
-    found = [projects / slug(cwd), projects / slug(root)] + sorted(projects.glob(slug(root) + "--claude-worktrees-*"))
+    brain = Path.home() / ".gemini" / "antigravity" / "brain"
+    found = [projects / slug(cwd), projects / slug(root)] + sorted(projects.glob(slug(root) + "--claude-worktrees-*")) + [brain]
     return [d for i, d in enumerate(found) if d.is_dir() and d not in found[:i]]
+
+
+def session_files(folders):
+    for f in folders:
+        for p in f.glob("*.jsonl"):
+            yield p.stem, p
+        for p in f.glob("*/.system_generated/logs/transcript.jsonl"):
+            yield p.parent.parent.parent.name, p
 
 def command(t):
     """A typed command's record, '<command-name>/x</command-name>...<command-args>y</command-args>', as '/x y'."""
@@ -49,6 +58,19 @@ def command(t):
 
 
 def texts(msg):
+    t = msg.get("type")
+    if t == "USER_INPUT":
+        raw = msg.get("content") or ""
+        if not isinstance(raw, str):
+            return []
+        m = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", raw, re.S)
+        if m:
+            return [m.group(1)]
+        raw = re.split(r"<ADDITIONAL_METADATA>", raw, maxsplit=1)[0].strip()
+        return [raw] if raw else []
+    if t == "PLANNER_RESPONSE":
+        raw = msg.get("content")
+        return [raw] if isinstance(raw, str) and raw.strip() else []
     c = (msg.get("message") or {}).get("content")
     if isinstance(c, str):
         return [command(c)]
@@ -66,30 +88,34 @@ def records(path):
 
 def spoken(path):
     for r in records(path):
-        if r.get("type") not in ("user", "assistant") or r.get("isCompactSummary") or r.get("isMeta"):
+        rt = r.get("type")
+        if rt not in ("user", "assistant", "USER_INPUT", "PLANNER_RESPONSE") or r.get("isCompactSummary") or r.get("isMeta"):
             continue
+        who = "user" if rt in ("user", "USER_INPUT") else "assistant"
+        ts = r.get("timestamp") or r.get("created_at") or "?"
         for t in texts(r):
             t = t.strip()
             if said(t):
-                yield r.get("timestamp", "?"), r["type"], t
+                yield ts, who, t
 
 def summary(path):
     start = end = title = first = None
     turns = boundaries = summaries = 0
     for r in records(path):
-        ts = r.get("timestamp")
+        ts = r.get("timestamp") or r.get("created_at")
         if ts:
             start = start or ts
             end = ts
-        if r.get("type") == "custom-title":
+        rt = r.get("type")
+        if rt == "custom-title":
             title = r.get("customTitle") or title
-        elif r.get("type") == "summary" and not title:
+        elif rt == "summary" and not title:
             title = r.get("summary")
-        if r.get("type") == "system" and r.get("subtype") == "compact_boundary":
+        if rt == "system" and r.get("subtype") == "compact_boundary":
             boundaries += 1
         elif r.get("isCompactSummary"):
             summaries += 1
-        elif r.get("type") == "user" and not r.get("isMeta"):
+        elif rt in ("user", "USER_INPUT") and not r.get("isMeta"):
             for t in texts(r):
                 t = t.strip()
                 if said(t):
@@ -110,16 +136,19 @@ def main():
         sys.exit(f"transcripts: no transcript folder {a.dir or 'for ' + os.getcwd()}")
     if a.cmd == "list":
         shown = 0
-        sessions = [p for f in folders for p in f.glob("*.jsonl")]
-        for p in sorted(sessions, key=lambda p: p.stat().st_mtime, reverse=True):
+        sessions = list(session_files(folders))
+        for sid, p in sorted(sessions, key=lambda x: x[1].stat().st_mtime, reverse=True):
             if shown >= a.limit:
                 break
             s, e, n, c, name = summary(p)
             if n:
                 shown += 1
-                print(f"{p.stem}  {(s or '?')[:16]} to {(e or '?')[:16]}  turns={n} compactions={c}  {name}")
+                print(f"{sid}  {(s or '?')[:16]} to {(e or '?')[:16]}  turns={n} compactions={c}  {name}")
         return
-    path = next((f / f"{a.id}.jsonl" for f in folders if (f / f"{a.id}.jsonl").is_file()), None)
+    path = next(
+        (p for f in folders for p in (f / f"{a.id}.jsonl", f / a.id / ".system_generated" / "logs" / "transcript.jsonl") if p.is_file()),
+        None,
+    )
     if "/" in a.id or a.id.startswith(".") or not path:
         sys.exit(f"transcripts: no session {a.id}")
     out = Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)

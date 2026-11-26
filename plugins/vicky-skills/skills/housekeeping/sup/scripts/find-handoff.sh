@@ -79,15 +79,18 @@ terms=() ; case "$branch" in ""|main|master|"$default") ;; *) terms+=(-e "$branc
 common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 if [ -n "$common" ] && [ "${#terms[@]}" -gt 0 ]; then
   prefix=$(dirname "$common" | sed 's#[/.]#-#g')
+  agy=${FIND_HANDOFF_ANTIGRAVITY_DIR:-$HOME/.gemini/antigravity/brain}
   n=0
   while IFS= read -r f; do
-    [ "$(basename "$f" .jsonl)" = "${CLAUDE_CODE_SESSION_ID:-}" ] && continue
+    sid=$(basename "$f" .jsonl)
+    [ "$sid" = "transcript" ] && sid=$(basename "$(dirname "$(dirname "$(dirname "$f")")")")
+    [ "$sid" = "${CLAUDE_CODE_SESSION_ID:-}" ] && continue
     grep -qF "${terms[@]}" "$f" || continue
     n=$((n + 1))
     url=$(grep -F '**Handoff**' "$f" | grep -oE 'https?://[^ ")\\]*' | tail -n 1)
-    [ -n "$url" ] && { hit "earlier session $(basename "$f" .jsonl)" "$url"; break; }
+    [ -n "$url" ] && { hit "earlier session $sid" "$url"; break; }
     [ "$n" -ge 5 ] && break
-  done < <(ls -t "$projects/$prefix"/*.jsonl "$projects/$prefix"--claude-worktrees-*/*.jsonl 2>/dev/null)
+  done < <(ls -t "$projects/$prefix"/*.jsonl "$projects/$prefix"--claude-worktrees-*/*.jsonl "$agy"/*/.system_generated/logs/transcript.jsonl 2>/dev/null)
   searched+=("$n earlier session transcripts naming ${branch:-the keys}")
 else unread+=("earlier sessions, no branch other than the default and no ticket key to match"); fi
 list=$(printf '%s; ' "${searched[@]}"); list=${list%; }

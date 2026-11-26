@@ -16,4 +16,9 @@ check "an unreadable transcript lets the stop through with exit 0" '[ $code = 0 
   jq -nc '{type:"assistant",message:{content:[{type:"text",text:"new reply"}]}}'; } > "$dir/t.jsonl"
 out=$(run "$dir/t.jsonl")
 check "only the reply since the user's last message is read" 'grep -q "new reply" <<<"$out" && ! grep -q "old reply" <<<"$out"'
+{ jq -nc '{type:"PLANNER_RESPONSE",content:"old agy reply"}'
+  jq -nc '{type:"USER_INPUT",content:"next agy ask"}'
+  jq -nc '{type:"PLANNER_RESPONSE",content:"new agy reply"}'; } > "$dir/agy.jsonl"
+out_agy=$(run "$dir/agy.jsonl")
+check "Antigravity transcript reads only reply since last USER_INPUT" 'grep -q "new agy reply" <<<"$out_agy" && ! grep -q "old agy reply" <<<"$out_agy"'
 exit $fail

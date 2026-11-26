@@ -81,4 +81,37 @@ check "finished opponent frees slot for next opponent" '[[ "$out_free" == *'\''"
 out="$(echo 'not json' | PLUGIN_DATA="$tmp/s8" python3 "$hook" 2>/dev/null)"
 check "malformed JSON allows cleanly" '[[ "$out" == *'\''"decision": "allow"'\''* ]]'
 
+cat >"$tmp/t_claude.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"claude-sonnet-4-5"}
+EOF
+out_cf="$(run_guard "$tmp/sc1" "{\"conversationId\":\"cc1\",\"transcriptPath\":\"$tmp/t_claude.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash\"}}}")"
+out_cfl="$(run_guard "$tmp/sc2" "{\"conversationId\":\"cc2\",\"transcriptPath\":\"$tmp/t_claude.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash_lite\"}}}")"
+out_ci="$(run_guard "$tmp/sc3" "{\"conversationId\":\"cc3\",\"transcriptPath\":\"$tmp/t_claude.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"inherit\"}}}")"
+check "Claude parent denies Model=flash" '[[ "$out_cf" == *'\''"decision": "deny"'\''* && "$out_cf" == *"inherit"* && "$out_cf" == *"Nothing was dispatched"* ]]'
+check "Claude parent denies Model=flash_lite" '[[ "$out_cfl" == *'\''"decision": "deny"'\''* && "$out_cfl" == *"inherit"* ]]'
+check "Claude parent allows Model=inherit" '[[ "$out_ci" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_gpro.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"gemini-2.5-pro"}
+EOF
+out_gpi="$(run_guard "$tmp/sgp1" "{\"conversationId\":\"cgp1\",\"transcriptPath\":\"$tmp/t_gpro.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"inherit\"}}}")"
+out_gpo="$(run_guard "$tmp/sgp2" "{\"conversationId\":\"cgp2\",\"transcriptPath\":\"$tmp/t_gpro.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\"}}}")"
+out_gpf="$(run_guard "$tmp/sgp3" "{\"conversationId\":\"cgp3\",\"transcriptPath\":\"$tmp/t_gpro.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash\"}}}")"
+check "Gemini Pro parent denies Model=inherit" '[[ "$out_gpi" == *'\''"decision": "deny"'\''* && "$out_gpi" == *"flash"* && "$out_gpi" == *"instead of '\''inherit'\''"* && "$out_gpi" == *"Nothing was dispatched"* ]]'
+check "Gemini Pro parent denies omitted Model" '[[ "$out_gpo" == *'\''"decision": "deny"'\''* && "$out_gpo" == *"flash_lite"* && "$out_gpo" == *"instead of '\''inherit'\''"* ]]'
+check "Gemini Pro parent allows Model=flash" '[[ "$out_gpf" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_gflash.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"gemini-2.5-flash"}
+EOF
+out_gfi="$(run_guard "$tmp/sgf1" "{\"conversationId\":\"cgf1\",\"transcriptPath\":\"$tmp/t_gflash.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"inherit\"}}}")"
+check "Gemini Flash parent allows Model=inherit" '[[ "$out_gfi" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_switch.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"gemini-2.5-pro"}
+{"type":"PLANNER_RESPONSE","model":"claude-sonnet-4-5"}
+EOF
+out_sw="$(run_guard "$tmp/ssw" "{\"conversationId\":\"csw\",\"transcriptPath\":\"$tmp/t_switch.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash\"}}}")"
+check "mid-session switch to Claude uses latest model" '[[ "$out_sw" == *'\''"decision": "deny"'\''* && "$out_sw" == *"Claude"* ]]'
+
 exit "$fails"

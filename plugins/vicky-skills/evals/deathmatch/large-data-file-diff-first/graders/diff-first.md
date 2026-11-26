@@ -1,0 +1,1 @@
+The opponent inspects `git diff main...HEAD -- data/catalog.json` before reading line ranges instead of reading the entire 500-line JSON file in full, flags the symptom fix in `src/handler.sh`, and keeps its report under 600 words.

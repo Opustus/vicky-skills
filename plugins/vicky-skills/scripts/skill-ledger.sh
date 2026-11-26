@@ -11,6 +11,8 @@ case "${CLAUDE_PLUGIN_OPTION_SKILL_LEDGER:-}" in true|1) ;; *) exit 0 ;; esac
 name=$(jq -r '
   if .hook_event_name == "UserPromptExpansion" then
     (if .expansion_type == "slash_command" then .command_name // "" else "" end)
+  elif .tool_name == "Read" or .tool_name == "read_file" then
+    ((.tool_input.file_path // .tool_input.Path // "") | capture("/skills/(?:[^/]+/)?(?<n>[A-Za-z0-9:_.-]+)/SKILL\\.md$") | .n // "")
   else .tool_input.skill // "" end' 2>/dev/null) || exit 0
 name=${name#/}
 # A name is one word; anything else would break the ledger's columns.

@@ -28,7 +28,7 @@ cat > "$dir/bin/gh" <<EOF
 cat "$dir/gh-pr"
 EOF
 chmod +x "$dir/bin/"*
-run() { (cd "$1" && shift && PATH="$dir/bin:$PATH" FIND_HANDOFF_PROJECTS_DIR="$dir/projects" CLAUDE_CODE_SESSION_ID=now bash "$finder" "$@" 2>&1); }
+run() { (cd "$1" && shift && PATH="$dir/bin:$PATH" FIND_HANDOFF_PROJECTS_DIR="$dir/projects" FIND_HANDOFF_ANTIGRAVITY_DIR="$dir/agy" CLAUDE_CODE_SESSION_ID=now bash "$finder" "$@" 2>&1); }
 
 tea_repo=$(repo tea git@forge.example:o/r.git)
 echo '[{"index":"5","head":"feat-ABC-7","url":"https://forge.example/o/r/pulls/5","title":"t","body":"Closes XYZ-9"},{"index":"6","head":"other","url":"u6","title":"","body":""}]' > "$dir/tea-prs"
@@ -166,4 +166,10 @@ check "with neither gh nor tea it names the pull request as not read" "not read:
 printf -- '- Handoff: !12 (2026-11-19)\n' > "$bare/.todo"
 out=$(cd "$bare" && PATH="$dir/nobin" FIND_HANDOFF_PROJECTS_DIR="$dir/projects" bash "$finder" 2>&1)
 check "with neither gh nor tea a !n Handoff line is named as not read" "not read: pull request 12, read its comments by hand" "$out"
+
+mkdir -p "$dir/agy/conv-99/.system_generated/logs"
+echo '{"type":"PLANNER_RESPONSE","content":"feat-ABC-7 **Handoff** https://forge.example/o/r/pulls/5#c99"}' > "$dir/agy/conv-99/.system_generated/logs/transcript.jsonl"
+echo '[]' > "$dir/tea-prs"
+out=$(FIND_HANDOFF_BRANCH=feat-ABC-7 run "$tea_repo")
+check "an earlier Antigravity transcript naming the branch links the handoff" "found: earlier session conv-99: https://forge.example/o/r/pulls/5#c99" "$out"
 exit $fail

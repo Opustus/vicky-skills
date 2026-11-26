@@ -18,7 +18,7 @@ The plugin settings under `/plugin` name the tools. A blank setting means the to
 
 Render, inspect, import and edit `.mdl` files with these tools only: headless Blender with Neverblender, and `cleanmodels` for check and repair. Never write your own renderer, parser or mesh editor.
 
-Stock game resources, unpacked one folder per BIF, are in `${user_config.nwn_refs}`. Read that folder's `AGENTS.md` first when it has one. Copy a stock file into your scratch folder before you edit it.
+Stock game resources, unpacked one folder per BIF, are in `${user_config.nwn_refs}` (an unexpanded `${user_config...}` literal means unset; fall back to `blender` for `nwn_blender`). Read that folder's `AGENTS.md` first when it has one. Copy a stock file into your scratch folder before you edit it.
 
 ## cleanmodels
 

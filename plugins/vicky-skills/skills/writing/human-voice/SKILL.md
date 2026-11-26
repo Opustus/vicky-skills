@@ -43,7 +43,7 @@ Use the reader's words, never code names. A second outcome gets a second example
 8. **Seat a reader panel** when the draft runs over about 400 words (`wc -w`). A shorter draft skips this step.
    Pick three to five seats from its audience, the readers who will act on it. A runbook or doc gets a seat that does a dry run, following each step as written.
    Lore gets a canon keeper, who checks it against the setting's other pages. Each seat reads the draft as that reader and lists the questions it is left with.
-   The `reader_panel` setting reads `${user_config.reader_panel}`, and `one agent` when it shows no value. At `one agent`, play every seat yourself, one at a time.
+   The `reader_panel` setting reads `${user_config.reader_panel}`, and `one agent` when it shows no value or an unexpanded `${user_config...}` literal. At `one agent`, play every seat yourself, one at a time.
    At `agent per seat`, start one subagent per seat, side by side, each briefed with its seat and the draft.
    Answer each question in the draft, from the source. Keep a question the source can't answer for the user. Done when every question is answered in the draft or kept.
 9. **Read it aloud as the user.** Done when every paragraph passes "would they have written this sentence?" against their writing.
