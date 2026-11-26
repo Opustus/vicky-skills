@@ -284,7 +284,7 @@ printf '# n\n' > "$rr/n.md"; h add -A; h commit -qm n; rv2=$(h rev-parse HEAD~1)
 o=$(cd "$rr" && bash "$dm/triggers.sh" "$rv2")
 check "a plain run on a Markdown-only diff keeps Standards and gives no reasons" 'grep -qx "fight: standards" <<<"$o" && grep -qx "out of reach: holds" <<<"$o"'
 o=$(cd "$rr" && bash "$dm/triggers.sh" --rerun "$rv2")
-check "a Markdown-only rerun names the verdict in Standards' reason" 'grep -qx "out of reach: standards (only Markdown changed since the verdict for $rv2, which held the rules)" <<<"$o" && grep -qx "out of reach: cause (no commit or body line claims a fix)" <<<"$o"'
+check "a Markdown-only rerun names the commits Standards reads" 'grep -qx "fight: standards (only the commits since $rv2)" <<<"$o" && grep -qx "out of reach: cause (no commit or body line claims a fix)" <<<"$o"'
 # A whitespace-only change can change meaning (YAML nesting), so it is no carry.
 ws="$t/ws"; git init -q -b main "$ws"; w() { git -C "$ws" -c user.name=t -c user.email=t@example.invalid "$@"; }
 printf 'a:\n  b: 1\n' > "$ws/c.yml"; w add -A; w commit -qm a; w switch -qc feat; printf 'a:\n  b: 1\n  c: 3\n' > "$ws/c.yml"; w commit -qam c; wv=$(w rev-parse HEAD)
@@ -293,6 +293,8 @@ printf 'Deathmatch verdict for %s: 0 proven findings\n' "$wv" > "$t/ws.md"; cp "
 (cd "$ws" && bash "$dm/verdict.sh" due "$t/ws.md" "$wh" main s9 >/dev/null 2>&1); r=$?
 check "due carries no verdict across a whitespace-only change of meaning" '[ $r = 0 ] && cmp -s "$t/ws.md" "$t/ws0.md"'
 # A rerun with nothing changed since the verdict sends no Holds, Simplicity or Standards.
-o=$(cd "$rr" && bash "$dm/triggers.sh" --rerun HEAD)
-check "a rerun with no change since the verdict leaves Holds and Simplicity out" 'grep -qx "out of reach: holds (no file other than Markdown changed)" <<<"$o" && grep -q "^out of reach: simplicity" <<<"$o"'
+o=$(cd "$rr" && bash "$dm/triggers.sh" --rerun HEAD); r=$?
+check "a rerun with no change since the verdict leaves Holds and Simplicity out" '[ $r = 0 ] && grep -qx "out of reach: holds (no file changed since the verdict for HEAD)" <<<"$o" && grep -qx "out of reach: standards (no file changed since the verdict for HEAD)" <<<"$o" && grep -qx "no trigger in the diff" <<<"$o"'
+o=$(cd "$rr" && bash "$dm/triggers.sh" --rerun deadbeef00 2>/dev/null); r=$?
+check "a rerun from a verdict commit git cannot find stops with no opponent named" '[ $r != 0 ] && ! grep -q "^fight:" <<<"$o"'
 exit $fail
