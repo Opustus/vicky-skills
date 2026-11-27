@@ -46,6 +46,7 @@ expect "a lower-case wip: title goes through" 0 "tea pr create -t 'wip: fix' </d
 expect "tea pr create --draft goes through" 0 'tea pr create --draft --title "Fix it" </dev/null'
 expect "an ANSI-quoted WIP: title goes through" 0 "tea pr create -t \$'WIP: fix' </dev/null"
 expect "tea pr create with --title=WIP: goes through" 0 'tea pr create --title=WIP:Fix </dev/null'
+expect "tea pr create with backslash continuation and WIP: goes through" 0 $'tea pr create --base main \\\n  --title "WIP: Fix it" </dev/null'
 
 # Marking ready: only after make-it-so started.
 expect "gh pr ready is refused with no make-it-so" 2 'gh pr ready 5'
