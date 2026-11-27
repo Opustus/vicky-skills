@@ -108,6 +108,6 @@ while IFS= read -r masked; do
       refuse "gs submit opens new pull requests ready unless told otherwise." \
         "Run git config spice.submit.draft true once in this repo, which drafts only new pull requests, then run the submit again."
   fi
-done < <(tr ';&|\n' '\n' <<<"${quoted//\\$'\n'/ }")
+done < <(tr ';&|\n' '\n' <<<"$quoted")
 
 exit 0 # mutant-ok delete: the loop above leaves status 0
