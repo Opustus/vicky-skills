@@ -185,6 +185,7 @@ Many guards have a per-repo opt-out line, named in their rows.
 | --- | --- | --- |
 | **Gate notify** (recommended) | Raises a desktop notification when a message opens with `🚪 Waiting on you:` and on Claude Code's own alerts, except the idle one. Uses `notify-send`, or `osascript` on macOS. | Off (`gate_notify`) |
 | **Viewscreen band** (recommended) | Sits above the prompt and says what the agent is doing and for how long, with a line naming the worktree, for every step and background agent. It's a Claude Code mod, so it needs function hooks turned on. | Always on |
+| **Antigravity hook adapter** (recommended) | Bridges Antigravity's `SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse` and `Stop` events to the plugin's guard and hint scripts, loading optional `$PLUGIN_DATA/config.json` into `CLAUDE_PLUGIN_OPTION_*`. | Always on |
 | **Preview pane** (recommended) | `/preview <path>` shows a picture, or one frame of a video, in a pane beside the chat with an Open button. Terminals that can't draw images (kitty, Ghostty and iTerm2 can) show the file's name. JPEGs and video frames need ffmpeg. Part of the same mod as the band. | Always on |
 
 ## Install
@@ -196,6 +197,8 @@ claude plugin marketplace add vickydotbat/vicky-skills --scope project
 ```
 
 Turn on auto-update under `/plugin`, then **Marketplaces**. The plugin has no version number, so every commit to `main` is an update.
+
+On Antigravity, clone this repository and run `python3 scripts/install-antigravity.py`. Put any plugin option overrides as JSON in `~/.gemini/antigravity/plugin_data/vicky-skills/config.json`.
 
 ## Proofreading
 

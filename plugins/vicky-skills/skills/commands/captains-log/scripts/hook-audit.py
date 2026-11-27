@@ -27,7 +27,16 @@ HEAD = 400  # characters of a tool result that hold the hook error
 SAME = 0.6  # similarity above which the next call is a retry of the refused one
 COMPARED = 600  # characters of each call input compared
 WINDOW = 12  # the refusal and the 11 events after it, searched for the next call and its result
-HOOK = re.compile(r'hook error: \[\\?"[^\]]*scripts/([a-z0-9-]+)\.(?:sh|py)')
+HOOK = re.compile(
+    r'hook error: \[\\?"[^\]]*scripts/([a-z0-9-]+)\.(?:sh|py)'
+    r'|tool call denied by pre-tool hook:\s*(?:Blocked by Claude hook:\s*)?([a-z0-9-]+)(?:\.(?:sh|py))?'
+)
+SKILL_MD = re.compile(r"/skills/(?:[^/]+/)?[A-Za-z0-9:_.-]+/SKILL\.md$")
+
+
+def hook_name(text):
+    m = HOOK.search(text[:HEAD])
+    return (m.group(1) or m.group(2)) if m else None
 
 
 NOT_TYPED = ("<task-notification", "This session is being continued", "<local-command",
@@ -40,25 +49,45 @@ def typed(d, text):
 
 
 def events(path):
-    calls, seq = {}, []
+    calls, seq, pending = {}, [], []
     for line in open(path, errors="ignore"):
         try:
             d = json.loads(line)
         except ValueError:
             continue
-        m = d.get("message") if isinstance(d.get("message"), dict) else {}
-        content = m.get("content") if isinstance(m.get("content"), list) else []
-        if isinstance(m.get("content"), str) and typed(d, m["content"]):
+        stype = d.get("type")
+        if stype == "USER_INPUT":
             seq.append(("user",))
-        for x in content:
-            if x.get("type") == "tool_use":
-                calls[x["id"]] = x
-                seq.append(("use", x))
-            elif x.get("type") == "tool_result":
-                t = x.get("content")
-                seq.append(("res", x.get("tool_use_id"), t if isinstance(t, str) else json.dumps(t)))
-            elif x.get("type") == "text" and typed(d, x.get("text") or ""):
+        elif stype == "PLANNER_RESPONSE":
+            for tc in d.get("tool_calls") or []:
+                name = tc.get("name") or ""
+                args = tc.get("args") or {}
+                if name == "read_file" and SKILL_MD.search(args.get("Path") or ""):
+                    name = "Skill"
+                cid = f"agy-{len(calls)}"
+                call = {"id": cid, "name": name, "input": args}
+                calls[cid] = call
+                pending.append(cid)
+                seq.append(("use", call))
+        elif stype == "GENERIC":
+            if pending:
+                pid = pending.pop(0)
+                text = d.get("error") or d.get("content") or ""
+                seq.append(("res", pid, text if isinstance(text, str) else json.dumps(text)))
+        else:
+            m = d.get("message") if isinstance(d.get("message"), dict) else {}
+            content = m.get("content") if isinstance(m.get("content"), list) else []
+            if isinstance(m.get("content"), str) and typed(d, m["content"]):
                 seq.append(("user",))
+            for x in content:
+                if x.get("type") == "tool_use":
+                    calls[x["id"]] = x
+                    seq.append(("use", x))
+                elif x.get("type") == "tool_result":
+                    t = x.get("content")
+                    seq.append(("res", x.get("tool_use_id"), t if isinstance(t, str) else json.dumps(t)))
+                elif x.get("type") == "text" and typed(d, x.get("text") or ""):
+                    seq.append(("user",))
     return calls, seq
 
 
@@ -71,7 +100,7 @@ def outcome(refused, seq, k):
         if e[0] == "use" and nxt is None:
             nxt = e[1]
         elif nxt and e[0] == "res" and e[1] == nxt["id"]:
-            again = bool(HOOK.search(e[2][:HEAD]))
+            again = bool(hook_name(e[2]))
             if nxt["name"] == "Skill":
                 return "skill"
             same = difflib.SequenceMatcher(None, json.dumps(refused["input"])[:COMPARED], json.dumps(nxt["input"])[:COMPARED]).ratio() > SAME
@@ -87,22 +116,29 @@ def present(hook, places):
 
 def main():
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 30
-    root = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/.claude/projects")
+    roots = [sys.argv[2]] if len(sys.argv) > 2 else [
+        os.path.expanduser("~/.claude/projects"),
+        os.path.expanduser("~/.gemini/antigravity/brain"),
+    ]
     cut = time.time() - days * 86400
     counts = collections.defaultdict(collections.Counter)
-    for path in glob.glob(os.path.join(root, "**", "*.jsonl"), recursive=True):
-        if os.path.getmtime(path) < cut:
-            continue
-        calls, seq = events(path)
-        for k, e in enumerate(seq):
-            if e[0] != "res":
+    for root in roots:
+        paths = glob.glob(os.path.join(root, "**", "*.jsonl"), recursive=True) + glob.glob(
+            os.path.join(root, "*", ".system_generated", "logs", "transcript.jsonl")
+        )
+        for path in dict.fromkeys(paths):
+            if os.path.getmtime(path) < cut:
                 continue
-            m = HOOK.search(e[2][:HEAD])
-            if not m:
-                continue
-            counts[m.group(1)]["refusals"] += 1
-            if e[1] in calls:
-                counts[m.group(1)][outcome(calls[e[1]], seq, k)] += 1
+            calls, seq = events(path)
+            for k, e in enumerate(seq):
+                if e[0] != "res":
+                    continue
+                h = hook_name(e[2])
+                if not h:
+                    continue
+                counts[h]["refusals"] += 1
+                if e[1] in calls:
+                    counts[h][outcome(calls[e[1]], seq, k)] += 1
     places = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "scripts"),
               os.path.join(os.getcwd(), ".claude", "hooks")]
     if not counts:

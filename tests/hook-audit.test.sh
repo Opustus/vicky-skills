@@ -65,4 +65,25 @@ mkdir -p "$dir/y"
   use d "make d"; res d "$refused"; jq -nc '{type:"user",isSidechain:true,message:{content:"subagent task"}}'; use d2 "make d"; res d2 ok; } > "$dir/y/s.jsonl"
 check "a reminder, a compact summary, a local-command caveat and a subagent prompt are not the user speaking" \
   "refusals=4 retry-passed=4" "$(counts "$dir/y")"
+
+mkdir -p "$dir/agy/c1/.system_generated/logs"
+{ jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{id:"a1",name:"run_command",args:{CommandLine:"tea pr list"}}]}'
+  jq -nc '{type:"GENERIC",error:"tool call denied by pre-tool hook: tea-stdin: close stdin"}'
+  jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{id:"a2",name:"run_command",args:{CommandLine:"tea pr list </dev/null"}}]}'
+  jq -nc '{type:"GENERIC",content:"ok"}'
+  jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{id:"a3",name:"run_command",args:{CommandLine:"git push"}}]}'
+  jq -nc '{type:"GENERIC",error:"tool call denied by pre-tool hook: Blocked by Claude hook: git-guard.sh: no"}'
+  jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{id:"a4",name:"read_file",args:{Path:"/x/skills/engrave/SKILL.md"}}]}'
+  jq -nc '{type:"GENERIC",content:"skill"}'
+  jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{name:"run_command",args:{CommandLine:"git push"}}]}'
+  jq -nc '{type:"GENERIC",error:"tool call denied by pre-tool hook: git-guard: no"}'
+  jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{id:"a6",name:"read_file",args:{Path:"/x/README.md"}}]}'
+  jq -nc '{type:"GENERIC",content:"ok"}'
+  jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{id:"a7",name:"run_command",args:{CommandLine:"git push"}}]}'
+  jq -nc '{type:"GENERIC",error:"tool call denied by pre-tool hook: git-guard: no"}'
+  jq -nc '{type:"USER_INPUT",content:"stop"}'; } > "$dir/agy/c1/.system_generated/logs/transcript.jsonl"
+agy_out=$(python3 -I "$audit" 30 "$dir/agy")
+check "Antigravity transcript counts tea-stdin retry-passed and git-guard skill/other-call/stopped" \
+  "$(grep -c '^tea-stdin refusals=1 retry-passed=1$' <<<"$agy_out")$(grep -c '^git-guard refusals=3 .*skill=1' <<<"$agy_out")$(grep -c '^git-guard refusals=3 .*other-call=1' <<<"$agy_out")$(grep -c '^git-guard refusals=3 .*stopped=1' <<<"$agy_out")" \
+  "1111"
 exit $fail

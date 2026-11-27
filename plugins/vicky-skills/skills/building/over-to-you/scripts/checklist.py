@@ -89,7 +89,7 @@ def receipt(item, n, out_dir, label=None):
     for kit in re.findall(r"`([^`]+)`", item.get("kit", "")):
         if kit not in command and kit not in got.get("tail", ""):
             return None, f"{label}: receipt {rid} ran `{command}`, and neither it nor its output holds the kit `{kit}`: run the kit itself through ran.sh"
-    sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or "\0"
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("VICKY_SESSION_ID") or "\0"
     scratches = tuple(os.path.join(root, sid) + os.sep for root in {os.environ.get("TMPDIR") or "/tmp", "/tmp"})
     if any((path + os.sep).startswith(scratches) for path in command_paths(command, got.get("cwd") or "/")):
         return None, (f"{label}: receipt {rid} ran `{command}`, a script written in the session folder: its last line, "

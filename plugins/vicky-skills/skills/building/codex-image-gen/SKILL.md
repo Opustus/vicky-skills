@@ -33,7 +33,7 @@ Codex's own files before you wait, retry or report.
 
 ## Prove it is alive
 
-Check these, newest first, with `${CLAUDE_PLUGIN_ROOT}/scripts/watch.sh '<check>'`, run by the Monitor tool:
+Check these, newest first, with `${CLAUDE_PLUGIN_ROOT}/scripts/watch.sh '<check>'`, run by the Monitor tool (or as a background command):
 
 - `pgrep -af "codex exec"` shows the process.
 - `find ~/.codex/sessions -name 'rollout-*.jsonl' -mmin -5 | grep -q .`: this

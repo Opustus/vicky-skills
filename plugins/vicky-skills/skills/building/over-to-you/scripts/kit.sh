@@ -14,8 +14,9 @@
 set -u
 usage() { echo "usage: kit.sh add <path>... | clean | left" >&2; exit 2; }
 [ $# -ge 1 ] || usage
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || { echo "kit.sh: CLAUDE_CODE_SESSION_ID is unset, so there is no session folder for the record" >&2; exit 2; }
-dir="${TMPDIR:-/tmp}/$CLAUDE_CODE_SESSION_ID"
+sid=${CLAUDE_CODE_SESSION_ID:-${VICKY_SESSION_ID:-}}
+[ -n "$sid" ] || { echo "kit.sh: CLAUDE_CODE_SESSION_ID (or VICKY_SESSION_ID) is unset, so there is no session folder for the record" >&2; exit 2; }
+dir="${TMPDIR:-/tmp}/$sid"
 rec="$dir/over-to-you-kits"
 there() { [ -e "$1" ] || [ -L "$1" ]; }
 recorded() { # <path>: 0 when the record holds it, or a recorded folder holds it

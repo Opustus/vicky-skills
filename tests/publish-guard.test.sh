@@ -34,4 +34,11 @@ user "go"
 check "the setting off passes" "" "$(OPT=false run 'gh repo create o/r --public')"
 check "the setting 0 passes" "" "$(OPT=0 run 'gh repo create o/r --public')"
 check "bad input passes" "" "$(echo nope | bash "$hook")"
+jq -nc '{type:"USER_INPUT",created_at:"2026-11-26T20:00:00Z",content:"<USER_REQUEST>\nyes, make it public\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nnot public\n</ADDITIONAL_METADATA>"}' > "$dir/t.jsonl"
+check "Antigravity USER_INPUT say-so passes and ignores ADDITIONAL_METADATA" "" "$(run 'gh repo edit o/r --visibility public')"
+jq -nc '{type:"USER_INPUT",created_at:"2026-11-26T20:00:00Z",content:"<USER_REQUEST>\ndo not make it public\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\npublic\n</ADDITIONAL_METADATA>"}' > "$dir/t.jsonl"
+check "Antigravity USER_INPUT refusal holds even when ADDITIONAL_METADATA says public" deny "$(run 'gh repo edit o/r --visibility public')"
+# shellcheck source=../plugins/vicky-skills/scripts/since-user.sh
+. "$(dirname "$hook")/since-user.sh"
+check "Antigravity created_at timestamp parses via last_user_time" "$(date -d '2026-11-26T20:00:00Z' +%s)" "$(last_user_time "$dir/t.jsonl")"
 exit $fail

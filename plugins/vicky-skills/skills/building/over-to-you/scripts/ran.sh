@@ -24,10 +24,11 @@ set -u
 [ $# -ge 2 ] || { echo "usage: ran.sh <id> <command> [args...]" >&2; exit 2; }
 id=$1; shift
 [[ $id =~ ^[A-Za-z0-9._-]+$ ]] || { echo "ran.sh: the id '$id' holds a character outside letters, digits, dot, dash and underscore" >&2; exit 2; }
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || { echo "ran.sh: CLAUDE_CODE_SESSION_ID is unset, so there is no session folder for the receipt" >&2; exit 2; }
+sid=${CLAUDE_CODE_SESSION_ID:-${VICKY_SESSION_ID:-}}
+[ -n "$sid" ] || { echo "ran.sh: CLAUDE_CODE_SESSION_ID (or VICKY_SESSION_ID) is unset, so there is no session folder for the receipt" >&2; exit 2; }
 [[ ${RAN_HOLD:-0} =~ ^[0-9]+$ ]] || { echo "ran.sh: RAN_HOLD='$RAN_HOLD' is no whole number of seconds" >&2; exit 2; }
 command -v python3 >/dev/null || { echo "ran.sh: python3 is missing, so no receipt can be written" >&2; exit 2; }
-dir="${TMPDIR:-/tmp}/$CLAUDE_CODE_SESSION_ID/over-to-you-receipts"
+dir="${TMPDIR:-/tmp}/$sid/over-to-you-receipts"
 mkdir -p "$dir" || exit 2
 log=$(mktemp "$dir/.$id.XXXXXX") || exit 2 # mutant-ok: mkdir -p made the folder a line above, so mktemp fails here only on a full disk
 trap 'rm -f "$log"' EXIT

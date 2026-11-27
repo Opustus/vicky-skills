@@ -106,4 +106,13 @@ if [ "$got" = 0 ]; then echo "ok   bad input goes through"; else echo "FAIL bad 
 # The refusal steers, and hands no command to the user.
 msg=$(jq -nc --arg t "$s/plain.jsonl" --arg d "$s/repo" '{cwd:$d,transcript_path:$t,tool_input:{command:"gh pr ready 5"}}' | bash "$hook" 2>&1 >/dev/null)
 if grep -q 'leave it a draft' <<<"$msg" && grep -q make-it-so <<<"$msg"; then echo "ok   the ready refusal says to leave it a draft"; else echo "FAIL the ready refusal: $msg"; fail=1; fi
+
+# Antigravity transcripts: USER_INPUT <SKILL> expansion and PLANNER_RESPONSE read_file on SKILL.md.
+{ jq -nc '{type:"USER_INPUT",content:"<SKILL>The user requested you read and use the \"make-it-so\" skill.</SKILL>"}'; } >"$s/agy_skill.jsonl"
+{ jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{name:"read_file",args:{Path:"/opt/plugins/vicky-skills/skills/make-it-so/SKILL.md"}}]}'; } >"$s/agy_read.jsonl"
+{ jq -nc '{type:"USER_INPUT",content:"just talking about make-it-so"}'
+  jq -nc '{type:"PLANNER_RESPONSE",tool_calls:[{name:"read_file",args:{Path:"/opt/plugins/vicky-skills/skills/make-it-so/README.md"}}]}'; } >"$s/agy_talk.jsonl"
+expect "gh pr ready goes through after Antigravity USER_INPUT <SKILL>" 0 'gh pr ready 5' "$s/agy_skill.jsonl"
+expect "gh pr ready goes through after Antigravity read_file SKILL.md" 0 'gh pr ready 5' "$s/agy_read.jsonl"
+expect "Antigravity talk or non-SKILL.md read does not count" 2 'gh pr ready 5' "$s/agy_talk.jsonl"
 exit $fail

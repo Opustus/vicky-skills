@@ -208,6 +208,8 @@ jobs:
         run: tests/page_needs_ticks_approved_examples.test.sh
       - name: Over-to-you checklist writer
         run: tests/over-to-you-checklist.test.sh
+      - name: VICKY_SESSION_ID fallback for over-to-you and interactive-page
+        run: tests/vicky-session-id.test.sh
       - name: Fetch place hint hook
         run: tests/fetch-place-hint.test.sh
       - name: Foreign post hint hook
@@ -341,6 +343,8 @@ jobs:
         run: tests/keep-awake-crash.test.sh
       - name: Skill ledger hook
         run: tests/skill_ledger_approved_examples.test.sh
+      - name: Skill ledger hook (Antigravity Read/read_file)
+        run: tests/skill-ledger-antigravity.test.sh
       - name: Idle skills
         run: tests/idle_skills_approved_examples.test.sh
       - name: git-guard and red-first-guard judge one command at a time
@@ -471,6 +475,10 @@ jobs:
         run: tests/opponent-batch-guard.test.sh
       - name: opponent-batch guard decisions (Antigravity)
         run: tests/opponent-batch-guard-antigravity.test.sh
+      - name: Antigravity lifecycle hook adapter
+        run: tests/antigravity-hook-adapter.test.sh
+      - name: Antigravity plugin installer
+        run: tests/install-antigravity.test.sh
       - name: prose-strip reads titles and messages
         run: tests/prose-strip.test.sh
       - name: read-item edges

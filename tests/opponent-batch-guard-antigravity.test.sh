@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # check() evals its single-quoted condition later
+# shellcheck disable=SC2034 # names set here are read inside check()'s eval
 # Antigravity opponent-batch-guard decisions: batch.sh cap (default 1, ceiling 3),
 # holds-opponent fights alone, Model="pro" refused, finished opponent frees slot,
 # and non-opponents / malformed input pass.
@@ -80,5 +82,58 @@ check "finished opponent frees slot for next opponent" '[[ "$out_free" == *'\''"
 
 out="$(echo 'not json' | PLUGIN_DATA="$tmp/s8" python3 "$hook" 2>/dev/null)"
 check "malformed JSON allows cleanly" '[[ "$out" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_claude.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"claude-sonnet-4-5"}
+EOF
+out_cf="$(run_guard "$tmp/sc1" "{\"conversationId\":\"cc1\",\"transcriptPath\":\"$tmp/t_claude.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash\"}}}")"
+out_cfl="$(run_guard "$tmp/sc2" "{\"conversationId\":\"cc2\",\"transcriptPath\":\"$tmp/t_claude.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash_lite\"}}}")"
+out_ci="$(run_guard "$tmp/sc3" "{\"conversationId\":\"cc3\",\"transcriptPath\":\"$tmp/t_claude.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"inherit\"}}}")"
+check "Claude parent denies Model=flash" '[[ "$out_cf" == *'\''"decision": "deny"'\''* && "$out_cf" == *"inherit"* && "$out_cf" == *"Nothing was dispatched"* ]]'
+check "Claude parent denies Model=flash_lite" '[[ "$out_cfl" == *'\''"decision": "deny"'\''* && "$out_cfl" == *"inherit"* ]]'
+check "Claude parent allows Model=inherit" '[[ "$out_ci" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_gpro.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"gemini-2.5-pro"}
+EOF
+out_gpi="$(run_guard "$tmp/sgp1" "{\"conversationId\":\"cgp1\",\"transcriptPath\":\"$tmp/t_gpro.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"inherit\"}}}")"
+out_gpo="$(run_guard "$tmp/sgp2" "{\"conversationId\":\"cgp2\",\"transcriptPath\":\"$tmp/t_gpro.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\"}}}")"
+out_gpf="$(run_guard "$tmp/sgp3" "{\"conversationId\":\"cgp3\",\"transcriptPath\":\"$tmp/t_gpro.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash\"}}}")"
+check "Gemini Pro parent denies Model=inherit" '[[ "$out_gpi" == *'\''"decision": "deny"'\''* && "$out_gpi" == *"flash"* && "$out_gpi" == *"instead of '\''inherit'\''"* && "$out_gpi" == *"Nothing was dispatched"* ]]'
+check "Gemini Pro parent denies omitted Model" '[[ "$out_gpo" == *'\''"decision": "deny"'\''* && "$out_gpo" == *"flash_lite"* && "$out_gpo" == *"instead of '\''inherit'\''"* ]]'
+check "Gemini Pro parent allows Model=flash" '[[ "$out_gpf" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_gflash.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"gemini-2.5-flash"}
+EOF
+out_gfi="$(run_guard "$tmp/sgf1" "{\"conversationId\":\"cgf1\",\"transcriptPath\":\"$tmp/t_gflash.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"inherit\"}}}")"
+check "Gemini Flash parent allows Model=inherit" '[[ "$out_gfi" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_switch.jsonl" <<'EOF'
+{"type":"PLANNER_RESPONSE","model":"gemini-2.5-pro"}
+{"type":"PLANNER_RESPONSE","model":"claude-sonnet-4-5"}
+EOF
+out_sw="$(run_guard "$tmp/ssw" "{\"conversationId\":\"csw\",\"transcriptPath\":\"$tmp/t_switch.jsonl\",\"toolCall\":{\"id\":\"t1\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"simplicity-opponent\",\"Model\":\"flash\"}}}")"
+check "mid-session switch to Claude uses latest model" '[[ "$out_sw" == *'\''"decision": "deny"'\''* && "$out_sw" == *"Claude"* ]]'
+
+cat >"$tmp/t_denied.jsonl" <<'EOF'
+{"type":"GENERIC","content":"OK"}
+{"type":"GENERIC","content":"at once: 2\nmemory cap: 1.9G"}
+{"type":"PLANNER_RESPONSE","tool_calls":[{"id":"c1","name":"invoke_subagent","args":{"TypeName":"holds-opponent"}},{"id":"c2","name":"invoke_subagent","args":{"TypeName":"intent-opponent"}}]}
+{"type":"GENERIC","content":"tool call denied by pre-tool hook"}
+{"type":"GENERIC","content":"Created the following subagent:\n{\"conversationId\": \"11111111-1111-1111-1111-111111111111\"}"}
+EOF
+out_den="$(run_guard "$tmp/sden" "{\"conversationId\":\"cden\",\"transcriptPath\":\"$tmp/t_denied.jsonl\",\"toolCall\":{\"id\":\"c3\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"standards-opponent\"}}}")"
+check "denied invoke_subagent does not shift subsequent pending opponent types" '[[ "$out_den" == *'\''"decision": "allow"'\''* ]]'
+
+cat >"$tmp/t_cross_turn.jsonl" <<'EOF'
+{"type":"GENERIC","content":"at once: 2\nmemory cap: 1.9G"}
+{"type":"PLANNER_RESPONSE","tool_calls":[{"id":"c1","name":"invoke_subagent","args":{"TypeName":"holds-opponent"}}]}
+{"type":"GENERIC","content":"unexpected failure"}
+{"type":"PLANNER_RESPONSE","tool_calls":[{"id":"c2","name":"invoke_subagent","args":{"TypeName":"intent-opponent"}}]}
+{"type":"GENERIC","content":"Created the following subagent:\n{\"conversationId\": \"22222222-2222-2222-2222-222222222222\"}"}
+EOF
+out_ct="$(run_guard "$tmp/sct" "{\"conversationId\":\"cct\",\"transcriptPath\":\"$tmp/t_cross_turn.jsonl\",\"toolCall\":{\"id\":\"c3\",\"name\":\"invoke_subagent\",\"args\":{\"TypeName\":\"standards-opponent\"}}}")"
+check "new PLANNER_RESPONSE clears stale uncreated pending opponents" '[[ "$out_ct" == *'\''"decision": "allow"'\''* ]]'
 
 exit "$fails"

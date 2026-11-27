@@ -52,4 +52,15 @@ list=$(cd "$r/.claude/worktrees/w" && HOME="$h" python3 "$t" list)
 check "list from a worktree shows the main checkout's sessions" '[[ $list == *"m1"* && $list == *"w1"* ]]'
 (cd "$r" && HOME="$h" python3 "$t" digest w1 "$s/w1.txt" >/dev/null)
 check "digest finds a worktree's session from the main checkout" 'grep -q "worktree ask" "$s/w1.txt"'
+
+mkdir -p "$h/.gemini/antigravity/brain/conv-agy/.system_generated/logs"
+cat > "$h/.gemini/antigravity/brain/conv-agy/.system_generated/logs/transcript.jsonl" <<'J'
+{"type":"USER_INPUT","created_at":"2026-11-22T10:00:00Z","content":"<USER_REQUEST>\nWhy is the sky green?\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nignore\n</ADDITIONAL_METADATA>"}
+{"type":"PLANNER_RESPONSE","created_at":"2026-11-22T10:01:00Z","content":"Shader typo in sky.frag."}
+{"type":"USER_INPUT","created_at":"2026-11-22T10:02:00Z","content":"Check the clouds too.\n<ADDITIONAL_METADATA>\nignore2\n</ADDITIONAL_METADATA>"}
+J
+list=$(cd "$r" && HOME="$h" python3 "$t" list)
+check "Antigravity brain session is listed by its conversation id and ask" '[[ $list == *"conv-agy"*"turns=2"*"Why is the sky green?"* ]]'
+(cd "$r" && HOME="$h" python3 "$t" digest conv-agy "$s/agy.txt" >/dev/null)
+check "Antigravity digest keeps user request and planner response without metadata" 'grep -q "user: Why is the sky green?" "$s/agy.txt" && grep -q "user: Check the clouds too." "$s/agy.txt" && grep -q "assistant: Shader typo in sky.frag." "$s/agy.txt" && ! grep -q "ADDITIONAL_METADATA" "$s/agy.txt"'
 exit $fail
